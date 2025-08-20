@@ -32,12 +32,10 @@ const Popup = () => {
 
   // Check if current page is on a Sentry domain
   useEffect(() => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       const currentTab = tabs[0];
       const url = currentTab?.url || '';
-      const isSentryDomain = url.includes('sentry.io') || 
-                            url.includes('sentry.dev') || 
-                            url.includes('sentry.com');
+      const isSentryDomain = url.includes('sentry.io') || url.includes('sentry.dev') || url.includes('sentry.com');
       setIsOnSentryPage(isSentryDomain);
     });
   }, []);
@@ -47,11 +45,7 @@ const Popup = () => {
       {/* Header */}
       <div className="popup-header">
         <div className="logo-container">
-          <img 
-            src={chrome.runtime.getURL('assets/sentry-chan-idle.svg')} 
-            alt="Sentry-chan" 
-            className="popup-logo"
-          />
+          <img src={chrome.runtime.getURL('assets/sentry_chan_idle.png')} alt="Sentry-chan" className="popup-logo" />
         </div>
         <div className="title-container">
           <h1>Sentry-chan</h1>
@@ -97,13 +91,9 @@ const Popup = () => {
         {/* Status indicator */}
         <div className="status-indicator">
           {isOnSentryPage ? (
-            <span className="status-on-sentry">
-              📍 On Sentry page
-            </span>
+            <span className="status-on-sentry">📍 On Sentry page</span>
           ) : (
-            <span className="status-other">
-              ℹ️ Not on Sentry page
-            </span>
+            <span className="status-other">ℹ️ Not on Sentry page</span>
           )}
         </div>
 
@@ -114,8 +104,7 @@ const Popup = () => {
             disabled={!state.enabled || !state.domainEnabled}
             className={cn('popup-button', 'primary', {
               disabled: !state.enabled || !state.domainEnabled,
-            })}
-          >
+            })}>
             {state.visible ? t('hideAvatar') : t('showAvatar')}
           </button>
 
@@ -124,27 +113,21 @@ const Popup = () => {
             disabled={!state.enabled || !state.domainEnabled}
             className={cn('popup-button', 'secondary', {
               disabled: !state.enabled || !state.domainEnabled,
-            })}
-          >
+            })}>
             {t('resetPosition')}
           </button>
         </div>
 
         {/* Options Button */}
         <div className="control-group">
-          <button
-            onClick={openOptions}
-            className="popup-button outline"
-          >
+          <button onClick={openOptions} className="popup-button outline">
             {t('openOptions')}
           </button>
         </div>
 
         {/* Keyboard Shortcut Info */}
         <div className="info-section">
-          <small className="keyboard-hint">
-            {t('keyboardShortcut')}
-          </small>
+          <small className="keyboard-hint">{t('keyboardShortcut')}</small>
         </div>
       </div>
     </div>

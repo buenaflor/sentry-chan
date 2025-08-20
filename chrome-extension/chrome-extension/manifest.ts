@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { IS_DEV } from '@extension/env';
 import type { ManifestType } from '@extension/shared';
 
 const packageJson = JSON.parse(readFileSync('./package.json', 'utf8'));
@@ -44,7 +45,7 @@ const manifest = {
         '*://*.sentry.dev/*',
         '*://*.sentry.com/*'
       ],
-      js: ['content/sentryChan.iife.js'],
+      js: [`content/sentryChan.iife${IS_DEV ? '_dev' : ''}.js`],
       run_at: 'document_idle',
     },
   ],

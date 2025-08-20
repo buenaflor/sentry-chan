@@ -14,7 +14,7 @@ const ANIMATION_DURATION = 200;
 const DEBOUNCE_DELAY = 150;
 
 // Animation frame utilities
-let animationFrame: number | null = null;
+const animationFrame: number | null = null;
 let dragAnimationFrame: number | null = null;
 
 class SentryChanAvatar {
@@ -23,11 +23,11 @@ class SentryChanAvatar {
   private avatar: HTMLElement | null = null;
   private hideButton: HTMLElement | null = null;
   private restoreTab: HTMLElement | null = null;
-  
+
   private isDragging = false;
   private dragOffset = { x: 0, y: 0 };
   private currentState: SentryChanStateType | null = null;
-  
+
   private debounceTimer: NodeJS.Timeout | null = null;
   private unsubscribe: (() => void) | null = null;
 
@@ -37,7 +37,7 @@ class SentryChanAvatar {
 
   private async initialize(): Promise<void> {
     console.log('[Sentry-chan] Initializing floating mascot...');
-    
+
     // Wait for DOM to be ready
     if (document.readyState === 'loading') {
       await new Promise(resolve => {
@@ -54,25 +54,38 @@ class SentryChanAvatar {
     try {
       // Get initial state from storage
       this.currentState = await sentryChanStorage.get();
-      
+      console.log('[Sentry-chan] Current state:', this.currentState);
+
       // Only initialize if enabled
       if (!this.currentState.enabled || !this.currentState.domainEnabled) {
-        console.log('[Sentry-chan] Disabled by settings');
+        console.log(
+          '[Sentry-chan] Disabled by settings - enabled:',
+          this.currentState.enabled,
+          'domainEnabled:',
+          this.currentState.domainEnabled,
+        );
         return;
+      }
+
+      // Initialize visibility based on startVisible setting for first load
+      if (this.currentState.visible !== this.currentState.startVisible) {
+        console.log('[Sentry-chan] Setting initial visibility from startVisible:', this.currentState.startVisible);
+        await sentryChanStorage.setVisibility(this.currentState.startVisible);
+        this.currentState = await sentryChanStorage.get();
       }
 
       // Create shadow DOM and UI
       this.createShadowDOM();
       this.injectStyles();
-      this.createAvatarUI();
+      await this.createAvatarUI();
       this.setupEventListeners();
       this.setupStorageListener();
       this.setupKeyboardShortcuts();
-      
+
       // Update visibility based on state
       this.updateVisibility();
-      
-      console.log('[Sentry-chan] Successfully initialized');
+
+      console.log('[Sentry-chan] Successfully initialized with visibility:', this.currentState.visible);
     } catch (error) {
       console.error('[Sentry-chan] Failed to initialize:', error);
     }
@@ -92,7 +105,7 @@ class SentryChanAvatar {
       z-index: 2147483646 !important;
       overflow: hidden !important;
     `;
-    
+
     // Create shadow root with closed mode for better encapsulation
     this.shadowRoot = shadowContainer.attachShadow({ mode: 'closed' });
     document.documentElement.appendChild(shadowContainer);
@@ -145,6 +158,14 @@ class SentryChanAvatar {
         justify-content: center;
         overflow: hidden;
         position: relative;
+      }
+      
+      .avatar-image img {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        object-fit: cover;
+        display: block;
       }
       
       .avatar-image svg {
@@ -284,7 +305,7 @@ class SentryChanAvatar {
         outline-offset: 2px;
       }
     `;
-    
+
     this.shadowRoot.appendChild(styles);
   }
 
@@ -299,51 +320,73 @@ class SentryChanAvatar {
       top: ${this.currentState.position.y}px;
       --avatar-size: ${this.currentState.size}px;
     `;
-    
+
     // Avatar image container
     const avatarImage = document.createElement('div');
     avatarImage.className = 'avatar-image';
-    
-    // Load SVG avatar
+
+    // Load PNG avatar
     try {
-      const svgUrl = chrome.runtime.getURL('assets/sentry-chan-idle.svg');
-      const response = await fetch(svgUrl);
-      const svgText = await response.text();
-      avatarImage.innerHTML = svgText;
+      const imageUrl = chrome.runtime.getURL('assets/sentry_chan_idle.png');
+      console.log('[Sentry-chan] Loading PNG avatar from:', imageUrl);
+      
+      // Create img element for PNG
+      const img = document.createElement('img');
+      img.src = imageUrl;
+      img.alt = 'Sentry-chan Avatar';
+      img.style.cssText = `
+        width: 100%;
+        height: 100%;
+      `;
+      
+      // Wait for image to load
+      await new Promise((resolve, reject) => {
+        img.onload = () => {
+          console.log('[Sentry-chan] PNG avatar loaded successfully');
+          resolve(img);
+        };
+        img.onerror = () => {
+          reject(new Error('Failed to load PNG image'));
+        };
+        // Set a timeout in case the image never loads
+        setTimeout(() => reject(new Error('Image load timeout')), 5000);
+      });
+      
+      avatarImage.appendChild(img);
     } catch (error) {
-      console.warn('[Sentry-chan] Failed to load avatar SVG, using fallback');
+      console.warn('[Sentry-chan] Failed to load avatar PNG, using fallback:', error);
       avatarImage.innerHTML = `
         <div style="width: 100%; height: 100%; background: linear-gradient(135deg, #362D59 0%, #8B5CF6 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px;">
           🎭
         </div>
       `;
     }
-    
+
     // Hover controls
     const hoverControls = document.createElement('div');
     hoverControls.className = 'hover-controls';
-    
+
     this.hideButton = document.createElement('button');
     this.hideButton.className = 'hide-button';
     this.hideButton.setAttribute('aria-label', 'Hide Sentry-chan avatar');
     this.hideButton.setAttribute('title', 'Hide avatar (Ctrl+Shift+.)');
-    
+
     hoverControls.appendChild(this.hideButton);
-    
+
     // Restore tab (initially hidden)
     this.restoreTab = document.createElement('button');
     this.restoreTab.className = 'restore-tab';
     this.restoreTab.setAttribute('aria-label', 'Show Sentry-chan avatar');
     this.restoreTab.setAttribute('title', 'Show avatar (Ctrl+Shift+.)');
-    
+
     // Assemble UI
     this.container.appendChild(avatarImage);
     this.container.appendChild(hoverControls);
     this.shadowRoot.appendChild(this.container);
     this.shadowRoot.appendChild(this.restoreTab);
-    
+
     this.avatar = avatarImage;
-    
+
     // Start idle animations if enabled
     this.updateAnimations();
   }
@@ -352,29 +395,29 @@ class SentryChanAvatar {
     if (!this.container || !this.hideButton || !this.restoreTab) return;
 
     // Hide button click
-    this.hideButton.addEventListener('click', (e) => {
+    this.hideButton.addEventListener('click', e => {
       e.stopPropagation();
       this.hideAvatar();
     });
-    
+
     // Restore tab click
-    this.restoreTab.addEventListener('click', (e) => {
+    this.restoreTab.addEventListener('click', e => {
       e.stopPropagation();
       this.showAvatar();
     });
-    
+
     // Drag and drop
     this.container.addEventListener('mousedown', this.handleMouseDown.bind(this));
     this.container.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
-    
+
     // Global mouse events
     document.addEventListener('mousemove', this.handleMouseMove.bind(this));
     document.addEventListener('mouseup', this.handleMouseUp.bind(this));
     document.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
     document.addEventListener('touchend', this.handleTouchEnd.bind(this));
-    
+
     // Prevent context menu on avatar
-    this.container.addEventListener('contextmenu', (e) => {
+    this.container.addEventListener('contextmenu', e => {
       e.preventDefault();
     });
   }
@@ -392,19 +435,20 @@ class SentryChanAvatar {
 
   private setupKeyboardShortcuts(): void {
     // Listen for keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', e => {
       // Check for Ctrl+Shift+. (period)
       if (e.ctrlKey && e.shiftKey && e.code === 'Period') {
         // Don't trigger if user is typing in an input field
         const activeElement = document.activeElement;
-        if (activeElement && (
-          activeElement.tagName === 'INPUT' ||
-          activeElement.tagName === 'TEXTAREA' ||
-          activeElement.hasAttribute('contenteditable')
-        )) {
+        if (
+          activeElement &&
+          (activeElement.tagName === 'INPUT' ||
+            activeElement.tagName === 'TEXTAREA' ||
+            activeElement.hasAttribute('contenteditable'))
+        ) {
           return;
         }
-        
+
         e.preventDefault();
         this.toggleVisibility();
       }
@@ -413,53 +457,53 @@ class SentryChanAvatar {
 
   private handleMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return; // Only left mouse button
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     this.startDrag(e.clientX, e.clientY);
   }
 
   private handleTouchStart(e: TouchEvent): void {
     if (e.touches.length !== 1) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     const touch = e.touches[0];
     this.startDrag(touch.clientX, touch.clientY);
   }
 
   private startDrag(clientX: number, clientY: number): void {
     if (!this.container || !this.currentState) return;
-    
+
     this.isDragging = true;
     this.container.classList.add('dragging');
-    
+
     // Calculate drag offset
     const rect = this.container.getBoundingClientRect();
     this.dragOffset = {
       x: clientX - rect.left,
       y: clientY - rect.top,
     };
-    
+
     // Update storage state
     sentryChanStorage.setDragging(true);
-    
+
     // Disable text selection
     document.body.style.userSelect = 'none';
   }
 
   private handleMouseMove(e: MouseEvent): void {
     if (!this.isDragging) return;
-    
+
     e.preventDefault();
     this.updateDragPosition(e.clientX, e.clientY);
   }
 
   private handleTouchMove(e: TouchEvent): void {
     if (!this.isDragging || e.touches.length !== 1) return;
-    
+
     e.preventDefault();
     const touch = e.touches[0];
     this.updateDragPosition(touch.clientX, touch.clientY);
@@ -467,25 +511,25 @@ class SentryChanAvatar {
 
   private updateDragPosition(clientX: number, clientY: number): void {
     if (!this.container || !this.isDragging) return;
-    
+
     // Cancel previous animation frame
     if (dragAnimationFrame) {
       cancelAnimationFrame(dragAnimationFrame);
     }
-    
+
     dragAnimationFrame = requestAnimationFrame(() => {
       if (!this.container) return;
-      
+
       const x = clientX - this.dragOffset.x;
       const y = clientY - this.dragOffset.y;
-      
+
       // Constrain to viewport
       const maxX = window.innerWidth - this.container.offsetWidth;
       const maxY = window.innerHeight - this.container.offsetHeight;
-      
+
       const constrainedX = Math.max(0, Math.min(x, maxX));
       const constrainedY = Math.max(0, Math.min(y, maxY));
-      
+
       // Update position with transform for better performance
       this.container.style.left = `${constrainedX}px`;
       this.container.style.top = `${constrainedY}px`;
@@ -504,17 +548,17 @@ class SentryChanAvatar {
 
   private async endDrag(): Promise<void> {
     if (!this.isDragging || !this.container) return;
-    
+
     this.isDragging = false;
     this.container.classList.remove('dragging');
-    
+
     // Re-enable text selection
     document.body.style.userSelect = '';
-    
+
     const rect = this.container.getBoundingClientRect();
     const x = rect.left;
     const y = rect.top;
-    
+
     // Check for corner snapping
     const snapCorner = this.getSnapCorner(x, y);
     if (snapCorner && this.currentState) {
@@ -523,34 +567,34 @@ class SentryChanAvatar {
       // Update storage with current position
       await this.debouncedUpdatePosition(x, y);
     }
-    
+
     // Update storage state
     await sentryChanStorage.setDragging(false);
   }
 
   private getSnapCorner(x: number, y: number): SentryChanStateType['corner'] | null {
     if (!this.currentState) return null;
-    
+
     const threshold = SNAP_THRESHOLD;
     const windowWidth = window.innerWidth;
     const windowHeight = window.innerHeight;
     const avatarSize = this.currentState.size;
-    
+
     // Check corners with proper avatar size
     if (x < threshold && y < threshold) return 'top-left';
     if (x > windowWidth - threshold - avatarSize && y < threshold) return 'top-right';
     if (x < threshold && y > windowHeight - threshold - avatarSize) return 'bottom-left';
     if (x > windowWidth - threshold - avatarSize && y > windowHeight - threshold - avatarSize) return 'bottom-right';
-    
+
     return null;
   }
 
   private debouncedUpdatePosition(x: number, y: number): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       if (this.debounceTimer) {
         clearTimeout(this.debounceTimer);
       }
-      
+
       this.debounceTimer = setTimeout(async () => {
         await sentryChanStorage.updatePosition(x, y);
         resolve();
@@ -559,8 +603,13 @@ class SentryChanAvatar {
   }
 
   private async toggleVisibility(): Promise<void> {
-    if (!this.currentState) return;
-    
+    if (!this.currentState) {
+      console.log('[Sentry-chan] toggleVisibility: No current state');
+      return;
+    }
+
+    console.log('[Sentry-chan] toggleVisibility: Current visible state:', this.currentState.visible);
+
     if (this.currentState.visible) {
       await this.hideAvatar();
     } else {
@@ -570,56 +619,68 @@ class SentryChanAvatar {
 
   private async hideAvatar(): Promise<void> {
     if (!this.container || !this.restoreTab) return;
-    
+
     // Animate hide
     this.container.classList.add('hidden');
-    
+
     // Position restore tab at avatar location
     const rect = this.container.getBoundingClientRect();
     this.restoreTab.style.left = `${rect.left + rect.width / 2 - 16}px`;
     this.restoreTab.style.top = `${rect.bottom - 6}px`;
-    
+
     // Show restore tab with delay
     setTimeout(() => {
       if (this.restoreTab) {
         this.restoreTab.classList.add('visible');
       }
     }, ANIMATION_DURATION);
-    
+
     await sentryChanStorage.setVisibility(false);
   }
 
   private async showAvatar(): Promise<void> {
     if (!this.container || !this.restoreTab) return;
-    
+
     // Hide restore tab
     this.restoreTab.classList.remove('visible');
-    
+
     // Show avatar with delay
     setTimeout(() => {
       if (this.container) {
         this.container.classList.remove('hidden');
       }
     }, 100);
-    
+
     await sentryChanStorage.setVisibility(true);
   }
 
   private updateVisibility(): void {
-    if (!this.container || !this.restoreTab || !this.currentState) return;
-    
+    if (!this.container || !this.restoreTab || !this.currentState) {
+      console.log('[Sentry-chan] updateVisibility: Missing elements or state');
+      return;
+    }
+
+    console.log('[Sentry-chan] updateVisibility: Setting visibility to', this.currentState.visible);
+
     if (this.currentState.visible) {
       this.container.classList.remove('hidden');
       this.restoreTab.classList.remove('visible');
+      console.log('[Sentry-chan] Avatar shown');
     } else {
+      // Get position before hiding
+      const rect = this.container.getBoundingClientRect();
+      const restoreX = rect.left + rect.width / 2 - 16;
+      const restoreY = rect.bottom - 6;
+
       this.container.classList.add('hidden');
+
       // Position and show restore tab
       setTimeout(() => {
-        if (this.restoreTab && this.container) {
-          const rect = this.container.getBoundingClientRect();
-          this.restoreTab.style.left = `${rect.left + rect.width / 2 - 16}px`;
-          this.restoreTab.style.top = `${rect.bottom - 6}px`;
+        if (this.restoreTab) {
+          this.restoreTab.style.left = `${restoreX}px`;
+          this.restoreTab.style.top = `${restoreY}px`;
           this.restoreTab.classList.add('visible');
+          console.log('[Sentry-chan] Avatar hidden, restore tab shown');
         }
       }, ANIMATION_DURATION);
     }
@@ -627,12 +688,12 @@ class SentryChanAvatar {
 
   private updateAnimations(): void {
     if (!this.avatar || !this.currentState) return;
-    
+
     // Remove existing animation classes
     this.avatar.classList.remove('animate-blink', 'animate-bounce', 'animate-sip');
-    
+
     if (!this.currentState.enableAnimations) return;
-    
+
     // Add appropriate animation class
     switch (this.currentState.animationState) {
       case 'blink':
@@ -654,18 +715,29 @@ class SentryChanAvatar {
   }
 
   private updateUI(): void {
-    if (!this.container || !this.currentState) return;
-    
+    if (!this.container || !this.currentState) {
+      console.log('[Sentry-chan] updateUI: Missing container or state');
+      return;
+    }
+
+    console.log('[Sentry-chan] updateUI: Updating with state:', {
+      visible: this.currentState.visible,
+      enabled: this.currentState.enabled,
+      domainEnabled: this.currentState.domainEnabled,
+      position: this.currentState.position,
+      size: this.currentState.size,
+    });
+
     // Update position
     this.container.style.left = `${this.currentState.position.x}px`;
     this.container.style.top = `${this.currentState.position.y}px`;
-    
+
     // Update size
     this.container.style.setProperty('--avatar-size', `${this.currentState.size}px`);
-    
+
     // Update visibility
     this.updateVisibility();
-    
+
     // Update animations
     this.updateAnimations();
   }
@@ -674,19 +746,19 @@ class SentryChanAvatar {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
-    
+
     if (animationFrame) {
       cancelAnimationFrame(animationFrame);
     }
-    
+
     if (dragAnimationFrame) {
       cancelAnimationFrame(dragAnimationFrame);
     }
-    
+
     if (this.unsubscribe) {
       this.unsubscribe();
     }
-    
+
     const shadowContainer = document.getElementById(SHADOW_ROOT_ID);
     if (shadowContainer) {
       shadowContainer.remove();

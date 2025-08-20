@@ -51,9 +51,9 @@ const Options = () => {
       <div className="options-header">
         <div className="header-content">
           <div className="logo-section">
-            <img 
-              src={chrome.runtime.getURL('assets/sentry-chan-idle.svg')} 
-              alt="Sentry-chan" 
+            <img
+              src={chrome.runtime.getURL('assets/sentry_chan_idle.png')}
+              alt="Sentry-chan"
               className="options-logo"
             />
             <div>
@@ -67,22 +67,17 @@ const Options = () => {
       {/* Main Content */}
       <div className="options-content">
         <div className="options-container">
-          
           {/* General Settings */}
           <div className="settings-section">
             <h2 className="section-title">General Settings</h2>
-            
+
             <div className="setting-item">
               <div className="setting-info">
                 <label className="setting-label">{t('startVisible')}</label>
                 <p className="setting-description">Show the avatar when loading Sentry pages</p>
               </div>
               <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={state.startVisible}
-                  onChange={handleToggleStartVisible}
-                />
+                <input type="checkbox" checked={state.startVisible} onChange={handleToggleStartVisible} />
                 <span className="toggle-slider"></span>
               </label>
             </div>
@@ -93,11 +88,7 @@ const Options = () => {
                 <p className="setting-description">Enable idle animations (blinking, bouncing)</p>
               </div>
               <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={state.enableAnimations}
-                  onChange={handleToggleAnimations}
-                />
+                <input type="checkbox" checked={state.enableAnimations} onChange={handleToggleAnimations} />
                 <span className="toggle-slider"></span>
               </label>
             </div>
@@ -106,7 +97,7 @@ const Options = () => {
           {/* Appearance Settings */}
           <div className="settings-section">
             <h2 className="section-title">Appearance</h2>
-            
+
             <div className="setting-item">
               <div className="setting-info">
                 <label className="setting-label">{t('avatarSize')}</label>
@@ -156,7 +147,7 @@ const Options = () => {
           {/* Keyboard Shortcuts */}
           <div className="settings-section">
             <h2 className="section-title">Keyboard Shortcuts</h2>
-            
+
             <div className="setting-item">
               <div className="setting-info">
                 <label className="setting-label">Toggle Avatar Visibility</label>
@@ -173,7 +164,7 @@ const Options = () => {
           {/* Advanced Settings */}
           <div className="settings-section">
             <h2 className="section-title">Advanced</h2>
-            
+
             <div className="setting-item">
               <div className="setting-info">
                 <label className="setting-label">Current Position</label>
@@ -181,10 +172,7 @@ const Options = () => {
                   X: {Math.round(state.position.x)}px, Y: {Math.round(state.position.y)}px
                 </p>
               </div>
-              <button 
-                className="options-button secondary" 
-                onClick={() => sentryChanStorage.resetPosition()}
-              >
+              <button className="options-button secondary" onClick={() => sentryChanStorage.resetPosition()}>
                 Reset Position
               </button>
             </div>
@@ -192,14 +180,11 @@ const Options = () => {
             <div className="setting-item">
               <div className="setting-info">
                 <label className="setting-label">{t('resetAllData')}</label>
-                <p className="setting-description">
-                  Reset all settings to default values
-                </p>
+                <p className="setting-description">Reset all settings to default values</p>
               </div>
-              <button 
-                className={cn('options-button', showResetConfirm ? 'danger' : 'secondary')} 
-                onClick={handleResetAll}
-              >
+              <button
+                className={cn('options-button', showResetConfirm ? 'danger' : 'secondary')}
+                onClick={handleResetAll}>
                 {showResetConfirm ? 'Click again to confirm' : 'Reset All Data'}
               </button>
             </div>
@@ -208,7 +193,7 @@ const Options = () => {
           {/* About Section */}
           <div className="settings-section">
             <h2 className="section-title">About</h2>
-            
+
             <div className="about-content">
               <p>
                 <strong>Sentry-chan</strong> is a lightweight floating mascot that appears on Sentry pages.
@@ -220,13 +205,12 @@ const Options = () => {
                 <li>⌨️ Keyboard shortcuts support</li>
                 <li>🔒 Privacy-focused with no telemetry</li>
               </ul>
-              
+
               <div className="version-info">
                 <small>Version: {chrome.runtime.getManifest().version}</small>
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>
