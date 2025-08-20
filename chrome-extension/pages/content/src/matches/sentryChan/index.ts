@@ -20,14 +20,14 @@ const animationFrame: number | null = null;
 let dragAnimationFrame: number | null = null;
 
 // Chat bubble constants
-const TYPEWRITER_SPEED = 40; // ms per character
+const TYPEWRITER_SPEED = 80; // ms per character
 const PUNCTUATION_PAUSE_LONG = 120; // ms for .?!
 const PUNCTUATION_PAUSE_SHORT = 60; // ms for ,;
 const BUBBLE_AUTO_DISMISS_DELAY = 3000; // ms after completion
 const BUBBLE_FADE_DURATION = 200; // ms for fade animations
 
 // Speech animation constants
-const SPEECH_ANIMATION_INTERVAL = 200; // ms between mouth open/close during speech
+const SPEECH_ANIMATION_INTERVAL = 100; // ms between mouth open/close during speech
 
 // Activity detection constants
 const INACTIVITY_THRESHOLD = 10000; // ms before going sleepy
@@ -92,8 +92,8 @@ class SentryChanAvatar {
   private dragStartPos = { x: 0, y: 0 };
 
   // Image caching for drag states
-  private idleImage: HTMLImageElement | null = null;
-  private idleMouthClosedImage: HTMLImageElement | null = null;
+  private idleMouthClosedImage: HTMLImageElement | null = null; // Default idle state
+  private idleMouthOpenImage: HTMLImageElement | null = null; // For speech animation
   private grabImage: HTMLImageElement | null = null;
 
   // Sleepy state images
@@ -108,6 +108,9 @@ class SentryChanAvatar {
 
   // Leaning over state image
   private leaningOverImage: HTMLImageElement | null = null;
+
+  // Thinking state image
+  private thinkingImage: HTMLImageElement | null = null;
 
   private debounceTimer: NodeJS.Timeout | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -125,7 +128,7 @@ class SentryChanAvatar {
 
   // Speech animation properties
   private speechAnimationTimer: NodeJS.Timeout | null = null;
-  private isSpeechMouthOpen = true;
+  private isSpeechMouthOpen = false; // Default to mouth closed
 
   // Activity detection and sleepy state
   private lastActivityTime = Date.now();
@@ -141,6 +144,10 @@ class SentryChanAvatar {
   // Celebrating state
   private isCelebrating = false;
   private celebratingTimer: NodeJS.Timeout | null = null;
+
+  // Thinking state
+  private isThinking = false;
+  private thinkingTimer: NodeJS.Timeout | null = null;
 
   // DOM observation for automatic triggers
   private domObserver: MutationObserver | null = null;
@@ -209,6 +216,7 @@ class SentryChanAvatar {
       this.setupDOMObservation();
       this.setupSectionDetection();
       this.setupResolveButtonDetection();
+      this.setupJSONViewDetection();
 
       // Update visibility based on state
       this.updateVisibility();
@@ -649,9 +657,9 @@ class SentryChanAvatar {
     try {
       console.log('[Sentry-chan] Setting up avatar with idle image');
 
-      // Create img element for PNG using preloaded image
-      if (this.idleImage) {
-        this.avatarImg = this.idleImage.cloneNode() as HTMLImageElement;
+      // Create img element for PNG using preloaded image (default to mouth closed)
+      if (this.idleMouthClosedImage) {
+        this.avatarImg = this.idleMouthClosedImage.cloneNode() as HTMLImageElement;
         this.avatarImg.alt = 'Sentry-chan Avatar';
         this.avatarImg.style.cssText = `
           width: 100%;
@@ -661,8 +669,8 @@ class SentryChanAvatar {
         // Update container to match image's natural dimensions
         if (this.container && this.currentState) {
           const scale = AVATAR_SCALE;
-          const containerWidth = this.idleImage.naturalWidth * scale;
-          const containerHeight = this.idleImage.naturalHeight * scale;
+          const containerWidth = this.idleMouthClosedImage.naturalWidth * scale;
+          const containerHeight = this.idleMouthClosedImage.naturalHeight * scale;
 
           this.container.style.width = `${containerWidth}px`;
           this.container.style.height = `${containerHeight}px`;
@@ -700,7 +708,7 @@ class SentryChanAvatar {
         avatarImage.appendChild(this.avatarImg);
         console.log('[Sentry-chan] Avatar setup complete');
       } else {
-        throw new Error('Failed to preload idle image');
+        throw new Error('Failed to preload idle mouth closed image');
       }
     } catch (error) {
       console.warn('[Sentry-chan] Failed to load avatar PNG, using fallback:', error);
@@ -753,15 +761,15 @@ class SentryChanAvatar {
     console.log('[Sentry-chan] Preloading avatar images...');
 
     try {
-      // Preload idle image
-      const idleUrl = chrome.runtime.getURL('assets/sentry_chan_idle.png');
-      this.idleImage = await this.loadImage(idleUrl);
-      console.log('[Sentry-chan] Idle image preloaded');
-
-      // Preload idle mouth closed image
+      // Preload idle mouth closed image (default idle state)
       const idleMouthClosedUrl = chrome.runtime.getURL('assets/sentry_chan_idle_mouth_closed.png');
       this.idleMouthClosedImage = await this.loadImage(idleMouthClosedUrl);
       console.log('[Sentry-chan] Idle mouth closed image preloaded');
+
+      // Preload idle mouth open image (for speech animation)
+      const idleMouthOpenUrl = chrome.runtime.getURL('assets/sentry_chan_idle_mouth_open.png');
+      this.idleMouthOpenImage = await this.loadImage(idleMouthOpenUrl);
+      console.log('[Sentry-chan] Idle mouth open image preloaded');
 
       // Preload grab image
       const grabUrl = chrome.runtime.getURL('assets/sentry_chan_cursor_grab.png');
@@ -791,6 +799,11 @@ class SentryChanAvatar {
       const leaningOverUrl = chrome.runtime.getURL('assets/sentry_chan_leaning_over.png');
       this.leaningOverImage = await this.loadImage(leaningOverUrl);
       console.log('[Sentry-chan] Leaning over image preloaded');
+
+      // Preload thinking image
+      const thinkingUrl = chrome.runtime.getURL('assets/sentry_chan_thinking.png');
+      this.thinkingImage = await this.loadImage(thinkingUrl);
+      console.log('[Sentry-chan] Thinking image preloaded');
     } catch (error) {
       console.error('[Sentry-chan] Failed to preload images:', error);
       throw error;
@@ -816,16 +829,17 @@ class SentryChanAvatar {
   }
 
   private switchToIdleImage(): void {
-    if (this.avatarImg && this.idleImage) {
-      this.avatarImg.src = this.idleImage.src;
-      console.log('[Sentry-chan] Switched to idle image');
+    // Default idle state is mouth closed
+    if (this.avatarImg && this.idleMouthClosedImage) {
+      this.avatarImg.src = this.idleMouthClosedImage.src;
+      console.log('[Sentry-chan] Switched to idle image (mouth closed)');
     }
   }
 
-  private switchToIdleMouthClosedImage(): void {
-    if (this.avatarImg && this.idleMouthClosedImage) {
-      this.avatarImg.src = this.idleMouthClosedImage.src;
-      console.log('[Sentry-chan] Switched to idle mouth closed image');
+  private switchToIdleMouthOpenImage(): void {
+    if (this.avatarImg && this.idleMouthOpenImage) {
+      this.avatarImg.src = this.idleMouthOpenImage.src;
+      console.log('[Sentry-chan] Switched to idle mouth open image');
     }
   }
 
@@ -857,21 +871,33 @@ class SentryChanAvatar {
     }
   }
 
+  private switchToThinkingImage(): void {
+    if (this.avatarImg && this.thinkingImage) {
+      this.avatarImg.src = this.thinkingImage.src;
+      console.log('[Sentry-chan] Switched to thinking image');
+    }
+  }
+
   private startSpeechAnimation(): void {
     if (this.speechAnimationTimer) {
       return; // Already running
     }
 
-    // Only animate if in idle state (not sleepy, panicked, or celebrating)
-    if (this.isSleepy || this.isPanicked || this.isCelebrating) {
+    // Only animate if in idle state (not sleepy, panicked, celebrating, or thinking)
+    if (this.isSleepy || this.isPanicked || this.isCelebrating || this.isThinking) {
       return;
     }
 
     console.log('[Sentry-chan] Starting speech animation');
 
-    // Start with mouth open (idle image)
-    this.isSpeechMouthOpen = true;
-    this.switchToIdleImage();
+    // Disable CSS animations that could interfere with speech animation
+    if (this.avatar) {
+      this.avatar.classList.remove('animate-blink', 'animate-bounce', 'animate-sip');
+    }
+
+    // Start with mouth closed (default idle state)
+    this.isSpeechMouthOpen = false;
+    this.switchToIdleImage(); // This is mouth closed by default
 
     this.speechAnimationTimer = setInterval(() => {
       if (this.bubbleState !== 'typing') {
@@ -880,17 +906,17 @@ class SentryChanAvatar {
         return;
       }
 
-      // Stop animation if state changed to sleepy, panicked, or celebrating
-      if (this.isSleepy || this.isPanicked || this.isCelebrating) {
+      // Stop animation if state changed to sleepy, panicked, celebrating, or thinking
+      if (this.isSleepy || this.isPanicked || this.isCelebrating || this.isThinking) {
         this.stopSpeechAnimation();
         return;
       }
 
-      // Alternate between mouth open and closed
+      // Alternate between mouth closed (default) and mouth open (talking)
       if (this.isSpeechMouthOpen) {
-        this.switchToIdleMouthClosedImage();
+        this.switchToIdleImage(); // mouth closed
       } else {
-        this.switchToIdleImage();
+        this.switchToIdleMouthOpenImage(); // mouth open
       }
       this.isSpeechMouthOpen = !this.isSpeechMouthOpen;
     }, SPEECH_ANIMATION_INTERVAL);
@@ -903,9 +929,16 @@ class SentryChanAvatar {
       console.log('[Sentry-chan] Stopped speech animation');
 
       // Return to idle image when done talking
-      if (!this.isSleepy && !this.isPanicked && !this.isCelebrating) {
+      if (!this.isSleepy && !this.isPanicked && !this.isCelebrating && !this.isThinking) {
         this.switchToIdleImage();
       }
+
+      // Re-enable idle animations after a short delay to avoid conflicts
+      setTimeout(() => {
+        if (!this.speechAnimationTimer && !this.bubbleActive) {
+          this.updateAnimations();
+        }
+      }, 500);
     }
   }
 
@@ -1331,8 +1364,15 @@ class SentryChanAvatar {
   }
 
   private enterSleepyState(): void {
-    if (this.isSleepy || this.isDragging || this.bubbleActive || this.isPanicked || this.isCelebrating) {
-      return; // Don't go sleepy during interactions, when panicked, or celebrating
+    if (
+      this.isSleepy ||
+      this.isDragging ||
+      this.bubbleActive ||
+      this.isPanicked ||
+      this.isCelebrating ||
+      this.isThinking
+    ) {
+      return; // Don't go sleepy during interactions, when panicked, celebrating, or thinking
     }
 
     console.log('[Sentry-chan] Entering sleepy state - no activity detected');
@@ -1392,13 +1432,13 @@ class SentryChanAvatar {
       this.coffeeSipTimer = null;
     }
 
-    // Return to idle image (unless panicked or celebrating)
-    if (!this.isPanicked && !this.isCelebrating) {
+    // Return to idle image (unless panicked, celebrating, or thinking)
+    if (!this.isPanicked && !this.isCelebrating && !this.isThinking) {
       this.switchToIdleImage();
     }
 
     // Show welcome back message if not already showing a bubble
-    if (!this.bubbleActive && !this.isPanicked && !this.isCelebrating) {
+    if (!this.bubbleActive && !this.isPanicked && !this.isCelebrating && !this.isThinking) {
       // Small delay to let the image switch complete
       setTimeout(() => {
         this.showAutomaticBubble(CONTEXTUAL_MESSAGES.welcomeBack);
@@ -1486,6 +1526,52 @@ class SentryChanAvatar {
     if (this.celebratingTimer) {
       clearTimeout(this.celebratingTimer);
       this.celebratingTimer = null;
+    }
+
+    // Return to idle image
+    this.switchToIdleImage();
+  }
+
+  private enterThinkingState(): void {
+    if (this.isThinking) {
+      return; // Already thinking
+    }
+
+    console.log('[Sentry-chan] Entering thinking state - analyzing JSON');
+
+    // Clear any existing states
+    this.wakeUpFromSleepy();
+    this.exitPanickedState();
+    this.exitCelebratingState();
+
+    this.isThinking = true;
+    this.switchToThinkingImage();
+
+    // Show thinking message
+    this.showAutomaticBubble('Whoa, this JSON looks way too complicated');
+
+    // Clear any existing thinking timer
+    if (this.thinkingTimer) {
+      clearTimeout(this.thinkingTimer);
+    }
+
+    // Return to idle after 5 seconds
+    this.thinkingTimer = setTimeout(() => {
+      this.exitThinkingState();
+    }, 5000);
+  }
+
+  private exitThinkingState(): void {
+    if (!this.isThinking) return;
+
+    console.log('[Sentry-chan] Exiting thinking state');
+
+    this.isThinking = false;
+
+    // Clear thinking timer
+    if (this.thinkingTimer) {
+      clearTimeout(this.thinkingTimer);
+      this.thinkingTimer = null;
     }
 
     // Return to idle image
@@ -1714,6 +1800,56 @@ class SentryChanAvatar {
 
     // Enter celebrating state
     this.enterCelebratingState();
+  }
+
+  private setupJSONViewDetection(): void {
+    // Check initial URL
+    this.checkForJSONView();
+
+    // Listen for URL changes (for SPAs)
+    let lastUrl = location.href;
+    const urlObserver = new MutationObserver(() => {
+      const currentUrl = location.href;
+      if (currentUrl !== lastUrl) {
+        lastUrl = currentUrl;
+        // Small delay to let the page settle
+        setTimeout(() => {
+          this.checkForJSONView();
+        }, 500);
+      }
+    });
+
+    // Observe for URL changes
+    urlObserver.observe(document, { subtree: true, childList: true });
+
+    // Also listen for popstate events (back/forward navigation)
+    window.addEventListener('popstate', () => {
+      setTimeout(() => {
+        this.checkForJSONView();
+      }, 500);
+    });
+  }
+
+  private checkForJSONView(): void {
+    const currentUrl = window.location.href;
+
+    // Check if URL matches the JSON event view pattern
+    // Pattern: /api/0/projects/{org}/{project}/events/{eventId}/json/
+    const jsonEventPattern = /\/api\/0\/projects\/[^/]+\/[^/]+\/events\/[a-f0-9]+\/json\/?$/i;
+
+    if (jsonEventPattern.test(currentUrl)) {
+      console.log('[Sentry-chan] JSON event view detected:', currentUrl);
+
+      // Small delay to ensure the page content has loaded
+      setTimeout(() => {
+        this.enterThinkingState();
+      }, 1000);
+    } else {
+      // Exit thinking state if we navigate away from JSON view
+      if (this.isThinking) {
+        this.exitThinkingState();
+      }
+    }
   }
 
   private showAutomaticBubble(message: string): void {
@@ -2212,6 +2348,7 @@ class SentryChanAvatar {
       this.isSipping = false;
       this.isPanicked = false;
       this.isCelebrating = false;
+      this.isThinking = false;
 
       this.container.classList.add('hidden');
       this.restoreTab.classList.remove('visible');
@@ -2240,6 +2377,11 @@ class SentryChanAvatar {
 
   private updateAnimations(): void {
     if (!this.avatar || !this.currentState) return;
+
+    // Don't apply CSS animations during speech animation to avoid conflicts
+    if (this.speechAnimationTimer) {
+      return;
+    }
 
     // Remove existing animation classes
     this.avatar.classList.remove('animate-blink', 'animate-bounce', 'animate-sip');
@@ -2353,6 +2495,11 @@ class SentryChanAvatar {
     if (this.celebratingTimer) {
       clearTimeout(this.celebratingTimer);
       this.celebratingTimer = null;
+    }
+
+    if (this.thinkingTimer) {
+      clearTimeout(this.thinkingTimer);
+      this.thinkingTimer = null;
     }
   }
 
