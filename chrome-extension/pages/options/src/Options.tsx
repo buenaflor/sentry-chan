@@ -2,9 +2,10 @@ import '@src/Options.css';
 import { t } from '@extension/i18n';
 import { useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
 import { sentryChanStorage } from '@extension/storage';
-import type { SentryChanStateType } from '@extension/storage';
 import { cn, ErrorDisplay, LoadingSpinner } from '@extension/ui';
-import React, { useState } from 'react';
+import { useState } from 'react';
+import type { SentryChanStateType } from '@extension/storage';
+import type React from 'react';
 
 const Options = () => {
   const state = useStorage(sentryChanStorage);
@@ -51,11 +52,7 @@ const Options = () => {
       <div className="options-header">
         <div className="header-content">
           <div className="logo-section">
-            <img
-              src={chrome.runtime.getURL('assets/sentry_chan_idle.png')}
-              alt="Sentry-chan"
-              className="options-logo"
-            />
+            <img src={chrome.runtime.getURL('icon-128.png')} alt="Sentry-chan" className="options-logo" />
             <div>
               <h1>Sentry-chan Options</h1>
               <p className="subtitle">Configure your floating mascot</p>

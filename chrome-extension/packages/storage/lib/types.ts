@@ -26,6 +26,9 @@ export interface SentryChanStateType {
   // Domain-specific settings
   domainEnabled: boolean;
 
+  // Edge snapping
+  snapToEdge: boolean;
+
   // Internal state
   isDragging: boolean;
   lastInteraction: number;
@@ -49,6 +52,7 @@ export type SentryChanStorageType = BaseStorageType<SentryChanStateType> & {
   // Feature toggles
   toggleEnabled: () => Promise<void>;
   toggleDomainEnabled: () => Promise<void>;
+  toggleSnapToEdge: () => Promise<void>;
 
   // Internal state
   setDragging: (isDragging: boolean) => Promise<void>;

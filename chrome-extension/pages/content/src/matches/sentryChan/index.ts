@@ -10,6 +10,7 @@ import type { SentryChanStateType } from '@extension/storage';
 const SHADOW_ROOT_ID = 'sentry-chan-shadow-root';
 const AVATAR_CONTAINER_ID = 'sentry-chan-container';
 const SNAP_THRESHOLD = 24;
+const EDGE_SNAP_THRESHOLD = 50; // Distance from edge to trigger edge snapping
 const ANIMATION_DURATION = 200;
 const DEBOUNCE_DELAY = 150;
 const AVATAR_SCALE = 0.25; // Scale factor for the avatar (0.15 = 15% of natural size, giving ~154x230px)
@@ -199,6 +200,11 @@ class SentryChanAvatar {
 
       // Update visibility based on state
       this.updateVisibility();
+
+      // If snap to edge is enabled, snap to nearest edge
+      if (this.currentState.snapToEdge) {
+        await this.snapToNearestEdge();
+      }
 
       console.log('[Sentry-chan] Successfully initialized with visibility:', this.currentState.visible);
     } catch (error) {
@@ -1066,7 +1072,14 @@ class SentryChanAvatar {
     this.unsubscribe = sentryChanStorage.subscribe(async () => {
       const newState = await sentryChanStorage.get();
       if (newState) {
+        const previousSnapToEdge = this.currentState?.snapToEdge;
         this.currentState = newState;
+
+        // If snap to edge was just enabled, snap to nearest edge
+        if (newState.snapToEdge && !previousSnapToEdge) {
+          await this.snapToNearestEdge();
+        }
+
         this.updateUI();
       }
     });
@@ -1681,8 +1694,15 @@ class SentryChanAvatar {
       const maxX = window.innerWidth - this.container.offsetWidth;
       const maxY = window.innerHeight - this.container.offsetHeight;
 
-      const constrainedX = Math.max(0, Math.min(x, maxX));
-      const constrainedY = Math.max(0, Math.min(y, maxY));
+      let constrainedX = Math.max(0, Math.min(x, maxX));
+      let constrainedY = Math.max(0, Math.min(y, maxY));
+
+      // Apply edge constraint if snap to edge is enabled
+      if (this.currentState?.snapToEdge) {
+        const edgePosition = this.constrainToEdge(constrainedX, constrainedY);
+        constrainedX = edgePosition.x;
+        constrainedY = edgePosition.y;
+      }
 
       // Update position with transform for better performance
       this.container.style.left = `${constrainedX}px`;
@@ -1732,14 +1752,19 @@ class SentryChanAvatar {
     const x = rect.left;
     const y = rect.top;
 
-    // Check for corner snapping
-    const snapCorner = this.getSnapCorner(x, y);
-    if (snapCorner && this.currentState) {
-      await sentryChanStorage.snapToCorner(snapCorner, this.currentState.size);
-    } else {
-      // Update storage with current position
-      await this.debouncedUpdatePosition(x, y);
+    // Check for corner snapping first (takes priority) - only if snap to edge is disabled
+    if (!this.currentState?.snapToEdge) {
+      const snapCorner = this.getSnapCorner(x, y);
+      if (snapCorner && this.currentState) {
+        await sentryChanStorage.snapToCorner(snapCorner, this.currentState.size);
+        // Update storage state
+        await sentryChanStorage.setDragging(false);
+        return;
+      }
     }
+
+    // Update storage with current position (edge constraint already applied during drag if enabled)
+    await this.debouncedUpdatePosition(x, y);
 
     // Update storage state
     await sentryChanStorage.setDragging(false);
@@ -1760,6 +1785,138 @@ class SentryChanAvatar {
     if (x > windowWidth - threshold - avatarSize && y > windowHeight - threshold - avatarSize) return 'bottom-right';
 
     return null;
+  }
+
+  private getEdgeSnapPosition(x: number, y: number): { x: number; y: number } | null {
+    if (!this.currentState || !this.container) return null;
+
+    const threshold = EDGE_SNAP_THRESHOLD;
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    const avatarWidth = this.container.offsetWidth;
+    const avatarHeight = this.container.offsetHeight;
+    const padding = 10; // Small padding from the exact edge
+
+    let snapX = x;
+    let snapY = y;
+    let shouldSnap = false;
+
+    // Check left edge
+    if (x < threshold) {
+      snapX = padding;
+      shouldSnap = true;
+    }
+    // Check right edge
+    else if (x + avatarWidth > windowWidth - threshold) {
+      snapX = windowWidth - avatarWidth - padding;
+      shouldSnap = true;
+    }
+
+    // Check top edge
+    if (y < threshold) {
+      snapY = padding;
+      shouldSnap = true;
+    }
+    // Check bottom edge
+    else if (y + avatarHeight > windowHeight - threshold) {
+      snapY = windowHeight - avatarHeight - padding;
+      shouldSnap = true;
+    }
+
+    return shouldSnap ? { x: snapX, y: snapY } : null;
+  }
+
+  private constrainToEdge(x: number, y: number): { x: number; y: number } {
+    if (!this.container) return { x, y };
+
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    const avatarWidth = this.container.offsetWidth;
+    const avatarHeight = this.container.offsetHeight;
+    const padding = 10;
+
+    // Find the closest edge
+    const distanceToLeft = x;
+    const distanceToRight = windowWidth - (x + avatarWidth);
+    const distanceToTop = y;
+    const distanceToBottom = windowHeight - (y + avatarHeight);
+
+    const minDistance = Math.min(distanceToLeft, distanceToRight, distanceToTop, distanceToBottom);
+
+    // Constrain to the closest edge
+    if (minDistance === distanceToLeft) {
+      // Left edge
+      return { x: padding, y: Math.max(padding, Math.min(y, windowHeight - avatarHeight - padding)) };
+    } else if (minDistance === distanceToRight) {
+      // Right edge
+      return {
+        x: windowWidth - avatarWidth - padding,
+        y: Math.max(padding, Math.min(y, windowHeight - avatarHeight - padding)),
+      };
+    } else if (minDistance === distanceToTop) {
+      // Top edge
+      return { x: Math.max(padding, Math.min(x, windowWidth - avatarWidth - padding)), y: padding };
+    } else {
+      // Bottom edge
+      return {
+        x: Math.max(padding, Math.min(x, windowWidth - avatarWidth - padding)),
+        y: windowHeight - avatarHeight - padding,
+      };
+    }
+  }
+
+  private async snapToNearestEdge(): Promise<void> {
+    if (!this.container || !this.currentState) return;
+
+    const currentX = this.container.offsetLeft;
+    const currentY = this.container.offsetTop;
+    const edgePosition = this.constrainToEdge(currentX, currentY);
+
+    await this.snapToEdgeWithAnimation(edgePosition.x, edgePosition.y);
+  }
+
+  private async snapToEdgeWithAnimation(targetX: number, targetY: number): Promise<void> {
+    if (!this.container) return;
+
+    const startX = this.container.offsetLeft;
+    const startY = this.container.offsetTop;
+    const deltaX = targetX - startX;
+    const deltaY = targetY - startY;
+
+    // If already at target position, just update storage
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+      await sentryChanStorage.updatePosition(targetX, targetY);
+      return;
+    }
+
+    // Animate to edge
+    const duration = ANIMATION_DURATION;
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      if (!this.container) return;
+
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Use easeOutCubic for smooth animation
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+      const currentX = startX + deltaX * easeProgress;
+      const currentY = startY + deltaY * easeProgress;
+
+      this.container.style.left = `${currentX}px`;
+      this.container.style.top = `${currentY}px`;
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Animation complete, update storage
+        sentryChanStorage.updatePosition(targetX, targetY);
+      }
+    };
+
+    requestAnimationFrame(animate);
   }
 
   private debouncedUpdatePosition(x: number, y: number): Promise<void> {

@@ -24,6 +24,9 @@ const getDefaultState = (): SentryChanStateType => {
     // Domain-specific settings
     domainEnabled: true,
 
+    // Edge snapping
+    snapToEdge: false,
+
     // Internal state
     isDragging: false,
     lastInteraction: Date.now(),
@@ -170,6 +173,15 @@ export const sentryChanStorage: SentryChanStorageType = {
     await storage.set(state => ({
       ...state,
       domainEnabled: !state.domainEnabled,
+      lastInteraction: Date.now(),
+    }));
+  },
+
+  // Toggle snap to edge
+  toggleSnapToEdge: async () => {
+    await storage.set(state => ({
+      ...state,
+      snapToEdge: !state.snapToEdge,
       lastInteraction: Date.now(),
     }));
   },
