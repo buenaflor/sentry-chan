@@ -31,9 +31,16 @@ const COFFEE_SIP_MIN_INTERVAL = 8000; // ms minimum between sips
 const COFFEE_SIP_MAX_INTERVAL = 15000; // ms maximum between sips
 const COFFEE_SIP_DURATION = 800; // ms for sipping animation
 
+// Panicked state constants
+const PANICKED_DURATION = 6000; // ms to stay in panicked state
+
 // DOM observation constants
 const DOM_OBSERVATION_DEBOUNCE = 500; // ms to debounce DOM changes
 const AUTO_BUBBLE_COOLDOWN = 10000; // ms cooldown between automatic bubbles
+
+// Section detection constants
+const SECTION_VISIBILITY_THRESHOLD = 0.5; // 50% of element must be visible
+const SECTION_TRIGGER_DELAY = 1000; // ms delay before triggering section message
 
 // Sample quips for the chat bubble
 const CHAT_QUIPS = [
@@ -55,6 +62,11 @@ const CONTEXTUAL_MESSAGES = {
   errorResolved: 'Great job fixing that error! 🎉',
   performance: 'Performance looks good! 📈',
   manyErrors: 'Lots of errors to investigate! 🕵️‍♀️',
+  welcomeBack: "Welcome back! Let's get back to debugging! 💪",
+  stackTrace: 'These stacktraces are useful for debugging! 🔍',
+  breadcrumbs: 'Breadcrumbs help trace the user journey! 🍞',
+  tags: 'Tags provide helpful context for errors! 🏷️',
+  releases: 'Release tracking helps identify when issues started! 📦',
 };
 
 class SentryChanAvatar {
@@ -79,6 +91,9 @@ class SentryChanAvatar {
   private sleepyHoldingImage: HTMLImageElement | null = null;
   private sleepySippingImage: HTMLImageElement | null = null;
 
+  // Panicked state image
+  private panickedImage: HTMLImageElement | null = null;
+
   private debounceTimer: NodeJS.Timeout | null = null;
   private unsubscribe: (() => void) | null = null;
 
@@ -100,11 +115,21 @@ class SentryChanAvatar {
   private isSleepy = false;
   private isSipping = false;
 
+  // Panicked state
+  private isPanicked = false;
+  private panickedTimer: NodeJS.Timeout | null = null;
+
   // DOM observation for automatic triggers
   private domObserver: MutationObserver | null = null;
   private domObservationTimer: NodeJS.Timeout | null = null;
   private lastAutoBubbleTime = 0;
   private lastUnhandledErrorCount = 0;
+
+  // Section detection
+  private intersectionObserver: IntersectionObserver | null = null;
+  private observedSections = new Set<Element>();
+  private lastTriggeredSection: string | null = null;
+  private sectionTriggerTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     this.initialize();
@@ -159,6 +184,7 @@ class SentryChanAvatar {
       this.setupKeyboardShortcuts();
       this.setupActivityDetection();
       this.setupDOMObservation();
+      this.setupSectionDetection();
 
       // Update visibility based on state
       this.updateVisibility();
@@ -690,6 +716,11 @@ class SentryChanAvatar {
       const sleepySippingUrl = chrome.runtime.getURL('assets/sentry_chan_sleepy_sipping_coffee.png');
       this.sleepySippingImage = await this.loadImage(sleepySippingUrl);
       console.log('[Sentry-chan] Sleepy sipping coffee image preloaded');
+
+      // Preload panicked image
+      const panickedUrl = chrome.runtime.getURL('assets/sentry_chan_panicked.png');
+      this.panickedImage = await this.loadImage(panickedUrl);
+      console.log('[Sentry-chan] Panicked image preloaded');
     } catch (error) {
       console.error('[Sentry-chan] Failed to preload images:', error);
       throw error;
@@ -732,6 +763,13 @@ class SentryChanAvatar {
     if (this.avatarImg && this.sleepySippingImage) {
       this.avatarImg.src = this.sleepySippingImage.src;
       console.log('[Sentry-chan] Switched to sleepy sipping coffee image');
+    }
+  }
+
+  private switchToPanickedImage(): void {
+    if (this.avatarImg && this.panickedImage) {
+      this.avatarImg.src = this.panickedImage.src;
+      console.log('[Sentry-chan] Switched to panicked image');
     }
   }
 
@@ -1081,8 +1119,8 @@ class SentryChanAvatar {
   }
 
   private enterSleepyState(): void {
-    if (this.isSleepy || this.isDragging || this.bubbleActive) {
-      return; // Don't go sleepy during interactions
+    if (this.isSleepy || this.isDragging || this.bubbleActive || this.isPanicked) {
+      return; // Don't go sleepy during interactions or when panicked
     }
 
     console.log('[Sentry-chan] Entering sleepy state - no activity detected');
@@ -1142,6 +1180,57 @@ class SentryChanAvatar {
       this.coffeeSipTimer = null;
     }
 
+    // Return to idle image (unless panicked)
+    if (!this.isPanicked) {
+      this.switchToIdleImage();
+    }
+
+    // Show welcome back message if not already showing a bubble
+    if (!this.bubbleActive && !this.isPanicked) {
+      // Small delay to let the image switch complete
+      setTimeout(() => {
+        this.showAutomaticBubble(CONTEXTUAL_MESSAGES.welcomeBack);
+      }, 200);
+    }
+  }
+
+  private enterPanickedState(): void {
+    if (this.isPanicked) {
+      return; // Already panicked
+    }
+
+    console.log('[Sentry-chan] Entering panicked state due to unhandled error');
+
+    // Clear any existing states
+    this.wakeUpFromSleepy();
+
+    this.isPanicked = true;
+    this.switchToPanickedImage();
+
+    // Clear any existing panicked timer
+    if (this.panickedTimer) {
+      clearTimeout(this.panickedTimer);
+    }
+
+    // Return to idle after 6 seconds
+    this.panickedTimer = setTimeout(() => {
+      this.exitPanickedState();
+    }, PANICKED_DURATION);
+  }
+
+  private exitPanickedState(): void {
+    if (!this.isPanicked) return;
+
+    console.log('[Sentry-chan] Exiting panicked state');
+
+    this.isPanicked = false;
+
+    // Clear panicked timer
+    if (this.panickedTimer) {
+      clearTimeout(this.panickedTimer);
+      this.panickedTimer = null;
+    }
+
     // Return to idle image
     this.switchToIdleImage();
   }
@@ -1171,6 +1260,7 @@ class SentryChanAvatar {
 
     this.domObservationTimer = setTimeout(() => {
       this.analyzePageContent();
+      this.observeSections(); // Re-scan for new sections after DOM changes
     }, DOM_OBSERVATION_DEBOUNCE);
   }
 
@@ -1191,9 +1281,14 @@ class SentryChanAvatar {
 
       const currentUnhandledCount = unhandledElements.length;
 
-      // Trigger bubble if new unhandled errors appeared
+      // Trigger bubble and panicked state if new unhandled errors appeared
       if (currentUnhandledCount > this.lastUnhandledErrorCount && currentUnhandledCount > 0) {
         console.log(`[Sentry-chan] Detected ${currentUnhandledCount} unhandled errors on page`);
+
+        // Enter panicked state
+        this.enterPanickedState();
+
+        // Show error message bubble
         this.showAutomaticBubble(CONTEXTUAL_MESSAGES.unhandledError);
       }
 
@@ -1201,6 +1296,118 @@ class SentryChanAvatar {
     } catch (error) {
       console.warn('[Sentry-chan] Error analyzing page content:', error);
     }
+  }
+
+  private setupSectionDetection(): void {
+    // Create intersection observer to detect when sections come into view
+    this.intersectionObserver = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting && entry.intersectionRatio >= SECTION_VISIBILITY_THRESHOLD) {
+            this.handleSectionVisible(entry.target);
+          }
+        });
+      },
+      {
+        threshold: SECTION_VISIBILITY_THRESHOLD,
+        rootMargin: '0px',
+      },
+    );
+
+    // Start observing sections
+    this.observeSections();
+  }
+
+  private observeSections(): void {
+    // Define section selectors and their corresponding messages
+    const sectionSelectors = [
+      {
+        selector: '[data-sentry-element="TitleWrapper"]',
+        textContent: 'Stack Trace',
+        message: CONTEXTUAL_MESSAGES.stackTrace,
+      },
+      {
+        selector: '[data-sentry-element="TitleWrapper"]',
+        textContent: 'Breadcrumbs',
+        message: CONTEXTUAL_MESSAGES.breadcrumbs,
+      },
+      {
+        selector: '[data-sentry-element="TitleWrapper"]',
+        textContent: 'Tags',
+        message: CONTEXTUAL_MESSAGES.tags,
+      },
+      {
+        selector: '[data-sentry-element="TitleWrapper"]',
+        textContent: 'Releases',
+        message: CONTEXTUAL_MESSAGES.releases,
+      },
+    ];
+
+    sectionSelectors.forEach(({ selector, textContent, message }) => {
+      const elements = document.querySelectorAll(selector);
+
+      elements.forEach(element => {
+        // Check if element contains the expected text
+        if (textContent && !element.textContent?.includes(textContent)) {
+          return;
+        }
+
+        if (!this.observedSections.has(element)) {
+          this.observedSections.add(element);
+          this.intersectionObserver?.observe(element);
+
+          // Store message on element for retrieval
+          (
+            element as HTMLElement & { __sentryChanMessage?: string; __sentryChanSectionId?: string }
+          ).__sentryChanMessage = message;
+          (
+            element as HTMLElement & { __sentryChanMessage?: string; __sentryChanSectionId?: string }
+          ).__sentryChanSectionId = textContent;
+        }
+      });
+    });
+  }
+
+  private handleSectionVisible(element: Element): void {
+    const elementWithData = element as HTMLElement & { __sentryChanMessage?: string; __sentryChanSectionId?: string };
+    const message = elementWithData.__sentryChanMessage;
+    const sectionId = elementWithData.__sentryChanSectionId;
+
+    if (!message || !sectionId) return;
+
+    // Prevent duplicate triggers for the same section
+    if (this.lastTriggeredSection === sectionId) {
+      return;
+    }
+
+    // Check cooldown
+    const now = Date.now();
+    if (now - this.lastAutoBubbleTime < AUTO_BUBBLE_COOLDOWN) {
+      return;
+    }
+
+    console.log(`[Sentry-chan] Section "${sectionId}" came into view`);
+
+    // Delay trigger to ensure user is actually reading the section
+    if (this.sectionTriggerTimer) {
+      clearTimeout(this.sectionTriggerTimer);
+    }
+
+    this.sectionTriggerTimer = setTimeout(() => {
+      // Double-check the element is still visible
+      const rect = element.getBoundingClientRect();
+      const windowHeight = window.innerHeight;
+
+      if (rect.top < windowHeight && rect.bottom > 0) {
+        this.lastTriggeredSection = sectionId;
+        this.showAutomaticBubble(message);
+
+        // Reset after a delay to allow re-triggering if user navigates away and back
+        setTimeout(() => {
+          this.lastTriggeredSection = null;
+        }, 30000); // 30 seconds
+      }
+    }, SECTION_TRIGGER_DELAY);
   }
 
   private showAutomaticBubble(message: string): void {
@@ -1545,11 +1752,12 @@ class SentryChanAvatar {
       const restoreX = rect.left + rect.width / 2 - 16;
       const restoreY = rect.bottom - 6;
 
-      // Clear activity timers, DOM observation, and sleepy state when hidden
+      // Clear activity timers, DOM observation, and all states when hidden
       this.clearActivityTimers();
       this.clearDOMObservation();
       this.isSleepy = false;
       this.isSipping = false;
+      this.isPanicked = false;
 
       this.container.classList.add('hidden');
 
@@ -1663,6 +1871,11 @@ class SentryChanAvatar {
       clearTimeout(this.coffeeSipTimer);
       this.coffeeSipTimer = null;
     }
+
+    if (this.panickedTimer) {
+      clearTimeout(this.panickedTimer);
+      this.panickedTimer = null;
+    }
   }
 
   private clearDOMObservation(): void {
@@ -1675,6 +1888,20 @@ class SentryChanAvatar {
       clearTimeout(this.domObservationTimer);
       this.domObservationTimer = null;
     }
+
+    // Clear section detection
+    if (this.intersectionObserver) {
+      this.intersectionObserver.disconnect();
+      this.intersectionObserver = null;
+    }
+
+    if (this.sectionTriggerTimer) {
+      clearTimeout(this.sectionTriggerTimer);
+      this.sectionTriggerTimer = null;
+    }
+
+    this.observedSections.clear();
+    this.lastTriggeredSection = null;
   }
 }
 
