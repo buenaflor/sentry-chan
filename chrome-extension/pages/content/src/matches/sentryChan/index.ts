@@ -31,9 +31,9 @@ const SPEECH_ANIMATION_INTERVAL = 100; // ms between mouth open/close during spe
 
 // Activity detection constants
 const INACTIVITY_THRESHOLD = 10000; // ms before going sleepy
-const COFFEE_SIP_MIN_INTERVAL = 8000; // ms minimum between sips
-const COFFEE_SIP_MAX_INTERVAL = 15000; // ms maximum between sips
-const COFFEE_SIP_DURATION = 800; // ms for sipping animation
+const SLEEPY_BLINK_MIN_INTERVAL = 2000; // ms minimum between blinks
+const SLEEPY_BLINK_MAX_INTERVAL = 4000; // ms maximum between blinks
+const SLEEPY_BLINK_DURATION = 300; // ms for eyes closed during blink
 
 // Panicked state constants
 const PANICKED_DURATION = 6000; // ms to stay in panicked state
@@ -97,8 +97,8 @@ class SentryChanAvatar {
   private grabImage: HTMLImageElement | null = null;
 
   // Sleepy state images
-  private sleepyHoldingImage: HTMLImageElement | null = null;
-  private sleepySippingImage: HTMLImageElement | null = null;
+  private sleepyEyesOpenImage: HTMLImageElement | null = null; // Default sleepy state
+  private sleepyEyesClosedImage: HTMLImageElement | null = null; // For blinking animation
 
   // Panicked state image
   private panickedImage: HTMLImageElement | null = null;
@@ -133,9 +133,9 @@ class SentryChanAvatar {
   // Activity detection and sleepy state
   private lastActivityTime = Date.now();
   private inactivityTimer: NodeJS.Timeout | null = null;
-  private coffeeSipTimer: NodeJS.Timeout | null = null;
+  private sleepyBlinkTimer: NodeJS.Timeout | null = null;
   private isSleepy = false;
-  private isSipping = false;
+  private isSleepyEyesClosed = false;
 
   // Panicked state
   private isPanicked = false;
@@ -776,14 +776,14 @@ class SentryChanAvatar {
       this.grabImage = await this.loadImage(grabUrl);
       console.log('[Sentry-chan] Grab image preloaded');
 
-      // Preload sleepy coffee images
-      const sleepyHoldingUrl = chrome.runtime.getURL('assets/sentry_chan_sleepy_holding_coffee.png');
-      this.sleepyHoldingImage = await this.loadImage(sleepyHoldingUrl);
-      console.log('[Sentry-chan] Sleepy holding coffee image preloaded');
+      // Preload sleepy blinking images
+      const sleepyEyesOpenUrl = chrome.runtime.getURL('assets/sentry_chan_sleepy_holding_coffee_eyes_open.png');
+      this.sleepyEyesOpenImage = await this.loadImage(sleepyEyesOpenUrl);
+      console.log('[Sentry-chan] Sleepy eyes open image preloaded');
 
-      const sleepySippingUrl = chrome.runtime.getURL('assets/sentry_chan_sleepy_sipping_coffee.png');
-      this.sleepySippingImage = await this.loadImage(sleepySippingUrl);
-      console.log('[Sentry-chan] Sleepy sipping coffee image preloaded');
+      const sleepyEyesClosedUrl = chrome.runtime.getURL('assets/sentry_chan_sleepy_holding_coffee_eyes_closed.png');
+      this.sleepyEyesClosedImage = await this.loadImage(sleepyEyesClosedUrl);
+      console.log('[Sentry-chan] Sleepy eyes closed image preloaded');
 
       // Preload panicked image
       const panickedUrl = chrome.runtime.getURL('assets/sentry_chan_panicked.png');
@@ -843,17 +843,17 @@ class SentryChanAvatar {
     }
   }
 
-  private switchToSleepyHoldingImage(): void {
-    if (this.avatarImg && this.sleepyHoldingImage) {
-      this.avatarImg.src = this.sleepyHoldingImage.src;
-      console.log('[Sentry-chan] Switched to sleepy holding coffee image');
+  private switchToSleepyEyesOpenImage(): void {
+    if (this.avatarImg && this.sleepyEyesOpenImage) {
+      this.avatarImg.src = this.sleepyEyesOpenImage.src;
+      console.log('[Sentry-chan] Switched to sleepy eyes open image');
     }
   }
 
-  private switchToSleepySippingImage(): void {
-    if (this.avatarImg && this.sleepySippingImage) {
-      this.avatarImg.src = this.sleepySippingImage.src;
-      console.log('[Sentry-chan] Switched to sleepy sipping coffee image');
+  private switchToSleepyEyesClosedImage(): void {
+    if (this.avatarImg && this.sleepyEyesClosedImage) {
+      this.avatarImg.src = this.sleepyEyesClosedImage.src;
+      console.log('[Sentry-chan] Switched to sleepy eyes closed image');
     }
   }
 
@@ -1378,44 +1378,45 @@ class SentryChanAvatar {
     console.log('[Sentry-chan] Entering sleepy state - no activity detected');
 
     this.isSleepy = true;
-    this.switchToSleepyHoldingImage();
+    this.isSleepyEyesClosed = false;
+    this.switchToSleepyEyesOpenImage(); // Default sleepy state is eyes open
 
-    // Start random coffee sipping cycle
-    this.scheduleCoffeeSip();
+    // Start random blinking cycle
+    this.scheduleSleepyBlink();
   }
 
-  private scheduleCoffeeSip(): void {
+  private scheduleSleepyBlink(): void {
     if (!this.isSleepy) return;
 
-    // Random interval between 2-5 seconds
+    // Random interval between 2-4 seconds for natural blinking
     const randomInterval =
-      COFFEE_SIP_MIN_INTERVAL + Math.random() * (COFFEE_SIP_MAX_INTERVAL - COFFEE_SIP_MIN_INTERVAL);
+      SLEEPY_BLINK_MIN_INTERVAL + Math.random() * (SLEEPY_BLINK_MAX_INTERVAL - SLEEPY_BLINK_MIN_INTERVAL);
 
-    this.coffeeSipTimer = setTimeout(() => {
-      if (this.isSleepy && !this.isSipping) {
-        this.startCoffeeSip();
+    this.sleepyBlinkTimer = setTimeout(() => {
+      if (this.isSleepy && !this.isSleepyEyesClosed) {
+        this.startSleepyBlink();
       }
     }, randomInterval);
   }
 
-  private startCoffeeSip(): void {
-    if (!this.isSleepy || this.isSipping) return;
+  private startSleepyBlink(): void {
+    if (!this.isSleepy || this.isSleepyEyesClosed) return;
 
-    console.log('[Sentry-chan] Taking a sip of coffee');
+    console.log('[Sentry-chan] Blinking sleepy eyes');
 
-    this.isSipping = true;
-    this.switchToSleepySippingImage();
+    this.isSleepyEyesClosed = true;
+    this.switchToSleepyEyesClosedImage();
 
-    // Return to holding after sip duration
+    // Return to eyes open after blink duration
     setTimeout(() => {
       if (this.isSleepy) {
-        this.isSipping = false;
-        this.switchToSleepyHoldingImage();
+        this.isSleepyEyesClosed = false;
+        this.switchToSleepyEyesOpenImage();
 
-        // Schedule next sip
-        this.scheduleCoffeeSip();
+        // Schedule next blink
+        this.scheduleSleepyBlink();
       }
-    }, COFFEE_SIP_DURATION);
+    }, SLEEPY_BLINK_DURATION);
   }
 
   private wakeUpFromSleepy(): void {
@@ -1424,12 +1425,12 @@ class SentryChanAvatar {
     console.log('[Sentry-chan] Waking up from sleepy state');
 
     this.isSleepy = false;
-    this.isSipping = false;
+    this.isSleepyEyesClosed = false;
 
-    // Clear coffee sip timer
-    if (this.coffeeSipTimer) {
-      clearTimeout(this.coffeeSipTimer);
-      this.coffeeSipTimer = null;
+    // Clear sleepy blink timer
+    if (this.sleepyBlinkTimer) {
+      clearTimeout(this.sleepyBlinkTimer);
+      this.sleepyBlinkTimer = null;
     }
 
     // Return to idle image (unless panicked, celebrating, or thinking)
@@ -2345,7 +2346,7 @@ class SentryChanAvatar {
       this.clearActivityTimers();
       this.clearDOMObservation();
       this.isSleepy = false;
-      this.isSipping = false;
+      this.isSleepyEyesClosed = false;
       this.isPanicked = false;
       this.isCelebrating = false;
       this.isThinking = false;
@@ -2482,9 +2483,9 @@ class SentryChanAvatar {
       this.inactivityTimer = null;
     }
 
-    if (this.coffeeSipTimer) {
-      clearTimeout(this.coffeeSipTimer);
-      this.coffeeSipTimer = null;
+    if (this.sleepyBlinkTimer) {
+      clearTimeout(this.sleepyBlinkTimer);
+      this.sleepyBlinkTimer = null;
     }
 
     if (this.panickedTimer) {
