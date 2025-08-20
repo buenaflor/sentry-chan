@@ -45,7 +45,7 @@ const Popup = () => {
       {/* Header */}
       <div className="popup-header">
         <div className="logo-container">
-          <img src={chrome.runtime.getURL('assets/sentry_chan_idle.png')} alt="Sentry-chan" className="popup-logo" />
+          <img src={chrome.runtime.getURL('icon-128.png')} alt="Sentry-chan" className="popup-logo" />
         </div>
         <div className="title-container">
           <h1>Sentry-chan</h1>

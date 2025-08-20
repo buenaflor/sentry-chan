@@ -34,13 +34,16 @@ const COFFEE_SIP_DURATION = 800; // ms for sipping animation
 // Panicked state constants
 const PANICKED_DURATION = 6000; // ms to stay in panicked state
 
+// Celebrating state constants
+const CELEBRATING_DURATION = 3000; // ms to stay in celebrating state
+
 // DOM observation constants
 const DOM_OBSERVATION_DEBOUNCE = 500; // ms to debounce DOM changes
 const AUTO_BUBBLE_COOLDOWN = 10000; // ms cooldown between automatic bubbles
 
 // Section detection constants
 const SECTION_VISIBILITY_THRESHOLD = 0.5; // 50% of element must be visible
-const SECTION_TRIGGER_DELAY = 1000; // ms delay before triggering section message
+const SECTION_TRIGGER_DELAY = 1000; // ms delay before triggering section  message
 
 // Sample quips for the chat bubble
 const CHAT_QUIPS = [
@@ -59,7 +62,7 @@ const CHAT_QUIPS = [
 // Contextual messages based on page content
 const CONTEXTUAL_MESSAGES = {
   unhandledError: 'Oh no, this unhandled error looks serious! 😱',
-  errorResolved: 'Great job fixing that error! 🎉',
+  errorResolved: 'Yayy, bug resolved - good job!! 🎉',
   performance: 'Performance looks good! 📈',
   manyErrors: 'Lots of errors to investigate! 🕵️‍♀️',
   welcomeBack: "Welcome back! Let's get back to debugging! 💪",
@@ -94,6 +97,9 @@ class SentryChanAvatar {
   // Panicked state image
   private panickedImage: HTMLImageElement | null = null;
 
+  // Celebrating state image
+  private celebratingImage: HTMLImageElement | null = null;
+
   private debounceTimer: NodeJS.Timeout | null = null;
   private unsubscribe: (() => void) | null = null;
 
@@ -118,6 +124,10 @@ class SentryChanAvatar {
   // Panicked state
   private isPanicked = false;
   private panickedTimer: NodeJS.Timeout | null = null;
+
+  // Celebrating state
+  private isCelebrating = false;
+  private celebratingTimer: NodeJS.Timeout | null = null;
 
   // DOM observation for automatic triggers
   private domObserver: MutationObserver | null = null;
@@ -185,6 +195,7 @@ class SentryChanAvatar {
       this.setupActivityDetection();
       this.setupDOMObservation();
       this.setupSectionDetection();
+      this.setupResolveButtonDetection();
 
       // Update visibility based on state
       this.updateVisibility();
@@ -721,6 +732,11 @@ class SentryChanAvatar {
       const panickedUrl = chrome.runtime.getURL('assets/sentry_chan_panicked.png');
       this.panickedImage = await this.loadImage(panickedUrl);
       console.log('[Sentry-chan] Panicked image preloaded');
+
+      // Preload celebrating image
+      const celebratingUrl = chrome.runtime.getURL('assets/sentry_chan_celebrating.png');
+      this.celebratingImage = await this.loadImage(celebratingUrl);
+      console.log('[Sentry-chan] Celebrating image preloaded');
     } catch (error) {
       console.error('[Sentry-chan] Failed to preload images:', error);
       throw error;
@@ -770,6 +786,13 @@ class SentryChanAvatar {
     if (this.avatarImg && this.panickedImage) {
       this.avatarImg.src = this.panickedImage.src;
       console.log('[Sentry-chan] Switched to panicked image');
+    }
+  }
+
+  private switchToCelebratingImage(): void {
+    if (this.avatarImg && this.celebratingImage) {
+      this.avatarImg.src = this.celebratingImage.src;
+      console.log('[Sentry-chan] Switched to celebrating image');
     }
   }
 
@@ -1119,8 +1142,8 @@ class SentryChanAvatar {
   }
 
   private enterSleepyState(): void {
-    if (this.isSleepy || this.isDragging || this.bubbleActive || this.isPanicked) {
-      return; // Don't go sleepy during interactions or when panicked
+    if (this.isSleepy || this.isDragging || this.bubbleActive || this.isPanicked || this.isCelebrating) {
+      return; // Don't go sleepy during interactions, when panicked, or celebrating
     }
 
     console.log('[Sentry-chan] Entering sleepy state - no activity detected');
@@ -1180,13 +1203,13 @@ class SentryChanAvatar {
       this.coffeeSipTimer = null;
     }
 
-    // Return to idle image (unless panicked)
-    if (!this.isPanicked) {
+    // Return to idle image (unless panicked or celebrating)
+    if (!this.isPanicked && !this.isCelebrating) {
       this.switchToIdleImage();
     }
 
     // Show welcome back message if not already showing a bubble
-    if (!this.bubbleActive && !this.isPanicked) {
+    if (!this.bubbleActive && !this.isPanicked && !this.isCelebrating) {
       // Small delay to let the image switch complete
       setTimeout(() => {
         this.showAutomaticBubble(CONTEXTUAL_MESSAGES.welcomeBack);
@@ -1229,6 +1252,51 @@ class SentryChanAvatar {
     if (this.panickedTimer) {
       clearTimeout(this.panickedTimer);
       this.panickedTimer = null;
+    }
+
+    // Return to idle image
+    this.switchToIdleImage();
+  }
+
+  private enterCelebratingState(): void {
+    if (this.isCelebrating) {
+      return; // Already celebrating
+    }
+
+    console.log('[Sentry-chan] Entering celebrating state - bug resolved!');
+
+    // Clear any existing states
+    this.wakeUpFromSleepy();
+    this.exitPanickedState();
+
+    this.isCelebrating = true;
+    this.switchToCelebratingImage();
+
+    // Clear any existing celebrating timer
+    if (this.celebratingTimer) {
+      clearTimeout(this.celebratingTimer);
+    }
+
+    // Show celebration message
+    this.showAutomaticBubble(CONTEXTUAL_MESSAGES.errorResolved);
+
+    // Return to idle after 3 seconds
+    this.celebratingTimer = setTimeout(() => {
+      this.exitCelebratingState();
+    }, CELEBRATING_DURATION);
+  }
+
+  private exitCelebratingState(): void {
+    if (!this.isCelebrating) return;
+
+    console.log('[Sentry-chan] Exiting celebrating state');
+
+    this.isCelebrating = false;
+
+    // Clear celebrating timer
+    if (this.celebratingTimer) {
+      clearTimeout(this.celebratingTimer);
+      this.celebratingTimer = null;
     }
 
     // Return to idle image
@@ -1408,6 +1476,55 @@ class SentryChanAvatar {
         }, 30000); // 30 seconds
       }
     }, SECTION_TRIGGER_DELAY);
+  }
+
+  private setupResolveButtonDetection(): void {
+    // Use event delegation to catch resolve button clicks
+    document.addEventListener(
+      'click',
+      e => {
+        const target = e.target as HTMLElement;
+
+        // Check if clicked element or its parent is a resolve button
+        const resolveButton = this.findResolveButton(target);
+        if (resolveButton) {
+          console.log('[Sentry-chan] Resolve button clicked!');
+          this.handleResolveButtonClick();
+        }
+      },
+      true,
+    ); // Use capture phase to catch before other handlers
+  }
+
+  private findResolveButton(element: HTMLElement): HTMLElement | null {
+    // Check up to 3 levels up the DOM tree
+    let current: HTMLElement | null = element;
+    let levels = 0;
+
+    while (current && levels < 3) {
+      // Check for resolve button characteristics
+      if (
+        current.tagName === 'BUTTON' &&
+        (current.getAttribute('aria-label') === 'Resolve' ||
+          current.textContent?.includes('Resolve') ||
+          current.querySelector('[data-sentry-element="ButtonLabel"]')?.textContent?.includes('Resolve'))
+      ) {
+        return current;
+      }
+
+      current = current.parentElement;
+      levels++;
+    }
+
+    return null;
+  }
+
+  private handleResolveButtonClick(): void {
+    // Record activity
+    this.recordActivity();
+
+    // Enter celebrating state
+    this.enterCelebratingState();
   }
 
   private showAutomaticBubble(message: string): void {
@@ -1758,6 +1875,7 @@ class SentryChanAvatar {
       this.isSleepy = false;
       this.isSipping = false;
       this.isPanicked = false;
+      this.isCelebrating = false;
 
       this.container.classList.add('hidden');
 
@@ -1875,6 +1993,11 @@ class SentryChanAvatar {
     if (this.panickedTimer) {
       clearTimeout(this.panickedTimer);
       this.panickedTimer = null;
+    }
+
+    if (this.celebratingTimer) {
+      clearTimeout(this.celebratingTimer);
+      this.celebratingTimer = null;
     }
   }
 
