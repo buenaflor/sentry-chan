@@ -26,6 +26,9 @@ const PUNCTUATION_PAUSE_SHORT = 60; // ms for ,;
 const BUBBLE_AUTO_DISMISS_DELAY = 3000; // ms after completion
 const BUBBLE_FADE_DURATION = 200; // ms for fade animations
 
+// Speech animation constants
+const SPEECH_ANIMATION_INTERVAL = 200; // ms between mouth open/close during speech
+
 // Activity detection constants
 const INACTIVITY_THRESHOLD = 10000; // ms before going sleepy
 const COFFEE_SIP_MIN_INTERVAL = 8000; // ms minimum between sips
@@ -90,6 +93,7 @@ class SentryChanAvatar {
 
   // Image caching for drag states
   private idleImage: HTMLImageElement | null = null;
+  private idleMouthClosedImage: HTMLImageElement | null = null;
   private grabImage: HTMLImageElement | null = null;
 
   // Sleepy state images
@@ -118,6 +122,10 @@ class SentryChanAvatar {
   private currentMessage = '';
   private currentCharIndex = 0;
   private bubbleActive = false;
+
+  // Speech animation properties
+  private speechAnimationTimer: NodeJS.Timeout | null = null;
+  private isSpeechMouthOpen = true;
 
   // Activity detection and sleepy state
   private lastActivityTime = Date.now();
@@ -750,6 +758,11 @@ class SentryChanAvatar {
       this.idleImage = await this.loadImage(idleUrl);
       console.log('[Sentry-chan] Idle image preloaded');
 
+      // Preload idle mouth closed image
+      const idleMouthClosedUrl = chrome.runtime.getURL('assets/sentry_chan_idle_mouth_closed.png');
+      this.idleMouthClosedImage = await this.loadImage(idleMouthClosedUrl);
+      console.log('[Sentry-chan] Idle mouth closed image preloaded');
+
       // Preload grab image
       const grabUrl = chrome.runtime.getURL('assets/sentry_chan_cursor_grab.png');
       this.grabImage = await this.loadImage(grabUrl);
@@ -809,6 +822,13 @@ class SentryChanAvatar {
     }
   }
 
+  private switchToIdleMouthClosedImage(): void {
+    if (this.avatarImg && this.idleMouthClosedImage) {
+      this.avatarImg.src = this.idleMouthClosedImage.src;
+      console.log('[Sentry-chan] Switched to idle mouth closed image');
+    }
+  }
+
   private switchToSleepyHoldingImage(): void {
     if (this.avatarImg && this.sleepyHoldingImage) {
       this.avatarImg.src = this.sleepyHoldingImage.src;
@@ -834,6 +854,58 @@ class SentryChanAvatar {
     if (this.avatarImg && this.celebratingImage) {
       this.avatarImg.src = this.celebratingImage.src;
       console.log('[Sentry-chan] Switched to celebrating image');
+    }
+  }
+
+  private startSpeechAnimation(): void {
+    if (this.speechAnimationTimer) {
+      return; // Already running
+    }
+
+    // Only animate if in idle state (not sleepy, panicked, or celebrating)
+    if (this.isSleepy || this.isPanicked || this.isCelebrating) {
+      return;
+    }
+
+    console.log('[Sentry-chan] Starting speech animation');
+
+    // Start with mouth open (idle image)
+    this.isSpeechMouthOpen = true;
+    this.switchToIdleImage();
+
+    this.speechAnimationTimer = setInterval(() => {
+      if (this.bubbleState !== 'typing') {
+        // Stop animation if not typing anymore
+        this.stopSpeechAnimation();
+        return;
+      }
+
+      // Stop animation if state changed to sleepy, panicked, or celebrating
+      if (this.isSleepy || this.isPanicked || this.isCelebrating) {
+        this.stopSpeechAnimation();
+        return;
+      }
+
+      // Alternate between mouth open and closed
+      if (this.isSpeechMouthOpen) {
+        this.switchToIdleMouthClosedImage();
+      } else {
+        this.switchToIdleImage();
+      }
+      this.isSpeechMouthOpen = !this.isSpeechMouthOpen;
+    }, SPEECH_ANIMATION_INTERVAL);
+  }
+
+  private stopSpeechAnimation(): void {
+    if (this.speechAnimationTimer) {
+      clearInterval(this.speechAnimationTimer);
+      this.speechAnimationTimer = null;
+      console.log('[Sentry-chan] Stopped speech animation');
+
+      // Return to idle image when done talking
+      if (!this.isSleepy && !this.isPanicked && !this.isCelebrating) {
+        this.switchToIdleImage();
+      }
     }
   }
 
@@ -1015,6 +1087,7 @@ class SentryChanAvatar {
         this.chatBubble.classList.add('visible');
         this.bubbleState = 'typing';
         this.bubbleText?.classList.add('typing');
+        this.startSpeechAnimation(); // Start speech animation when typing begins
         this.startTypewriter();
       }
     });
@@ -1061,6 +1134,7 @@ class SentryChanAvatar {
     // Clear timer and show complete text immediately
     this.clearBubbleTimers();
     this.bubbleText.textContent = this.currentMessage;
+    this.stopSpeechAnimation(); // Stop speech animation when skipping
     this.completeTypewriter();
   }
 
@@ -1071,6 +1145,7 @@ class SentryChanAvatar {
 
     this.bubbleState = 'complete';
     this.bubbleText.classList.remove('typing');
+    this.stopSpeechAnimation(); // Stop speech animation when typing is complete
 
     // Start auto-dismiss timer
     this.dismissTimer = setTimeout(() => {
@@ -1118,6 +1193,9 @@ class SentryChanAvatar {
       clearTimeout(this.dismissTimer);
       this.dismissTimer = null;
     }
+
+    // Also stop speech animation
+    this.stopSpeechAnimation();
   }
 
   private getRandomQuip(): string {
@@ -2144,9 +2222,9 @@ class SentryChanAvatar {
         if (!this.leaningContainer.parentElement) {
           document.body.appendChild(this.leaningContainer);
         }
-        
+
         this.positionLeaningContainer();
-        
+
         setTimeout(() => {
           if (this.leaningContainer) {
             this.leaningContainer.classList.add('visible');
@@ -2231,6 +2309,9 @@ class SentryChanAvatar {
 
     // Clear chat bubble timers
     this.clearBubbleTimers();
+
+    // Clear speech animation timer
+    this.stopSpeechAnimation();
 
     // Clear activity detection timers
     this.clearActivityTimers();
