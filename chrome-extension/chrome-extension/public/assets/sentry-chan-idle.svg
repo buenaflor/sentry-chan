@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="40" cy="40" r="38" fill="#362D59" stroke="#8B5CF6" stroke-width="2"/>
+  
+  <!-- Head -->
+  <circle cx="40" cy="35" r="15" fill="#F3E8FF"/>
+  
+  <!-- Eyes -->
+  <circle cx="35" cy="32" r="2" fill="#362D59"/>
+  <circle cx="45" cy="32" r="2" fill="#362D59"/>
+  
+  <!-- Eye highlights -->
+  <circle cx="36" cy="31" r="0.8" fill="#FFFFFF"/>
+  <circle cx="46" cy="31" r="0.8" fill="#FFFFFF"/>
+  
+  <!-- Mouth -->
+  <path d="M37 38 Q40 40 43 38" stroke="#362D59" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  
+  <!-- Blush -->
+  <circle cx="30" cy="36" r="1.5" fill="#F472B6" opacity="0.6"/>
+  <circle cx="50" cy="36" r="1.5" fill="#F472B6" opacity="0.6"/>
+  
+  <!-- Hair/Antenna -->
+  <path d="M32 22 Q30 18 28 20" stroke="#8B5CF6" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M48 22 Q50 18 52 20" stroke="#8B5CF6" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <circle cx="28" cy="20" r="1.5" fill="#A855F7"/>
+  <circle cx="52" cy="20" r="1.5" fill="#A855F7"/>
+  
+  <!-- Body -->
+  <ellipse cx="40" cy="55" rx="12" ry="8" fill="#F3E8FF"/>
+  
+  <!-- Arms -->
+  <ellipse cx="28" cy="52" rx="3" ry="6" fill="#F3E8FF" transform="rotate(-20 28 52)"/>
+  <ellipse cx="52" cy="52" rx="3" ry="6" fill="#F3E8FF" transform="rotate(20 52 52)"/>
+  
+  <!-- Coffee cup (idle prop) -->
+  <rect x="47" y="48" width="6" height="8" rx="1" fill="#8B5CF6"/>
+  <rect x="48" y="49" width="4" height="6" fill="#362D59"/>
+  <path d="M53 52 Q55 52 55 54 Q55 56 53 56" stroke="#8B5CF6" stroke-width="1" fill="none"/>
+  
+  <!-- Steam from coffee -->
+  <path d="M49 47 Q48 45 49 43" stroke="#D1D5DB" stroke-width="0.8" fill="none" opacity="0.7"/>
+  <path d="M51 47 Q52 45 51 43" stroke="#D1D5DB" stroke-width="0.8" fill="none" opacity="0.7"/>
+</svg>

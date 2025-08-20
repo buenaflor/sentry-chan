@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="240" height="80" viewBox="0 0 240 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Frame 1: Normal -->
+  <g id="frame1">
+    <circle cx="40" cy="40" r="38" fill="#362D59" stroke="#8B5CF6" stroke-width="2"/>
+    <circle cx="40" cy="35" r="15" fill="#F3E8FF"/>
+    <circle cx="35" cy="32" r="2" fill="#362D59"/>
+    <circle cx="45" cy="32" r="2" fill="#362D59"/>
+    <circle cx="36" cy="31" r="0.8" fill="#FFFFFF"/>
+    <circle cx="46" cy="31" r="0.8" fill="#FFFFFF"/>
+    <path d="M37 38 Q40 40 43 38" stroke="#362D59" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <circle cx="30" cy="36" r="1.5" fill="#F472B6" opacity="0.6"/>
+    <circle cx="50" cy="36" r="1.5" fill="#F472B6" opacity="0.6"/>
+    <ellipse cx="40" cy="55" rx="12" ry="8" fill="#F3E8FF"/>
+  </g>
+  
+  <!-- Frame 2: Blink -->
+  <g id="frame2" transform="translate(80,0)">
+    <circle cx="40" cy="40" r="38" fill="#362D59" stroke="#8B5CF6" stroke-width="2"/>
+    <circle cx="40" cy="35" r="15" fill="#F3E8FF"/>
+    <!-- Closed eyes -->
+    <path d="M33 32 L37 32" stroke="#362D59" stroke-width="2" stroke-linecap="round"/>
+    <path d="M43 32 L47 32" stroke="#362D59" stroke-width="2" stroke-linecap="round"/>
+    <path d="M37 38 Q40 40 43 38" stroke="#362D59" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <circle cx="30" cy="36" r="1.5" fill="#F472B6" opacity="0.6"/>
+    <circle cx="50" cy="36" r="1.5" fill="#F472B6" opacity="0.6"/>
+    <ellipse cx="40" cy="55" rx="12" ry="8" fill="#F3E8FF"/>
+  </g>
+  
+  <!-- Frame 3: Happy -->
+  <g id="frame3" transform="translate(160,0)">
+    <circle cx="40" cy="40" r="38" fill="#362D59" stroke="#8B5CF6" stroke-width="2"/>
+    <circle cx="40" cy="35" r="15" fill="#F3E8FF"/>
+    <!-- Happy eyes -->
+    <path d="M33 30 Q35 32 37 30" stroke="#362D59" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M43 30 Q45 32 47 30" stroke="#362D59" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <!-- Big smile -->
+    <path d="M35 37 Q40 42 45 37" stroke="#362D59" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <circle cx="30" cy="36" r="1.5" fill="#F472B6" opacity="0.8"/>
+    <circle cx="50" cy="36" r="1.5" fill="#F472B6" opacity="0.8"/>
+    <ellipse cx="40" cy="55" rx="12" ry="8" fill="#F3E8FF"/>
+    <!-- Sparkles -->
+    <path d="M25 25 L27 27 L25 29 L23 27 Z" fill="#FFD700"/>
+    <path d="M55 25 L57 27 L55 29 L53 27 Z" fill="#FFD700"/>
+  </g>
+</svg>

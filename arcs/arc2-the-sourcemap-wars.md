@@ -20,14 +20,20 @@ _A masked figure emerges, glyphs spilling from his cloak like smoke._
 
 ---
 
-### **Scene 1 — Arrival of Lady Symbolica**
+### **Scene 1 — The Shrine in the Fog**
 
-_At the center of the district, a shrine emerges from the fog. A priestess steps out, scrolls tied with crimson cord._
+_Dev and Sentry-chan stumble deeper into the fog, where a faint glow pierces the haze. A shrine stands, half-buried in shifting glyphs. A priestess emerges, scrolls hanging from her sleeves like chains of light._
 
-- **Lady Symbolica (bowing):** I am Lady Symbolica. You cannot pierce this fog without the **Debug-ID Charm**.
-- **Dev:** The Debug-ID…?
-- **Sentry-chan:** The true signature of an artifact. With it, obfuscation collapses.
-- **Lady Symbolica:** But the Charm has fractured. Its shards are scattered through the district. Only by restoring it can we unmask Cipher Phantom.
+- **Lady Symbolica (solemnly):** Travelers… this fog is not mere smoke. It is woven from broken truths. You cannot cut it down with steel.
+- **Dev (straining, frustrated):** Then how do I fight what I can’t even _see_?
+- **Sentry-chan (nodding):** We need more than strength — we need the names beneath the haze.
+- **Lady Symbolica (lifting a cracked talisman):** The Debug-ID Charm was forged for this purpose — to bind an artifact to its true scroll, revealing what was hidden.
+- **Dev (hesitant):** And without it?
+- **Lady Symbolica:** Without it, the fog of obfuscation will always return. To face Cipher Phantom, you must restore the Charm. Its shards lie scattered in this district, waiting for one who seeks clarity.
+
+_The shrine pulses. The mist recoils slightly, as if recognizing Dev._
+
+- **Sentry-chan (to Dev, softly):** This is your path. The fight is not to kill the fog… but to _understand_ it.
 
 ---
 

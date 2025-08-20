@@ -1,0 +1,75 @@
+{
+  "extensionDescription": {
+    "description": "Extension description",
+    "message": "A lightweight floating mascot avatar for Sentry pages"
+  },
+  "extensionName": {
+    "description": "Extension name",
+    "message": "Sentry-chan: Floating Mascot"
+  },
+  "toggleAvatar": {
+    "message": "Toggle Avatar"
+  },
+  "showAvatar": {
+    "message": "Show Avatar"
+  },
+  "hideAvatar": {
+    "message": "Hide Avatar"
+  },
+  "resetPosition": {
+    "message": "Reset Position"
+  },
+  "openOptions": {
+    "message": "Open Options"
+  },
+  "enableOnSentry": {
+    "message": "Enable on Sentry"
+  },
+  "avatarSize": {
+    "message": "Avatar Size"
+  },
+  "defaultCorner": {
+    "message": "Default Corner"
+  },
+  "enableAnimations": {
+    "message": "Enable Animations"
+  },
+  "startVisible": {
+    "message": "Start Visible"
+  },
+  "keyboardShortcut": {
+    "message": "Keyboard Shortcut: Ctrl+Shift+."
+  },
+  "resetAllData": {
+    "message": "Reset All Data"
+  },
+  "greeting": {
+    "description": "Greeting message",
+    "message": "Hello, My name is $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "John Doe"
+      }
+    }
+  },
+  "hello": {
+    "description": "Placeholder example",
+    "message": "Hello $1"
+  },
+  "displayErrorInfo": {
+    "message": "Error occur"
+  },
+  "displayErrorDescription": {
+    "message": "Sorry, something went wrong while loading the page."
+  },
+  "displayErrorDetailsInfo": {
+    "message": "Error details:"
+  },
+  "displayErrorUnknownErrorInfo": {
+    "message": "Unknown error"
+  },
+  "displayErrorReset": {
+    "message": "Run Again"
+  }
+}
