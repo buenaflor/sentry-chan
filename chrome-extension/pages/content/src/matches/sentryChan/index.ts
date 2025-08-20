@@ -25,6 +25,16 @@ const PUNCTUATION_PAUSE_SHORT = 60; // ms for ,;
 const BUBBLE_AUTO_DISMISS_DELAY = 3000; // ms after completion
 const BUBBLE_FADE_DURATION = 200; // ms for fade animations
 
+// Activity detection constants
+const INACTIVITY_THRESHOLD = 10000; // ms before going sleepy
+const COFFEE_SIP_MIN_INTERVAL = 8000; // ms minimum between sips
+const COFFEE_SIP_MAX_INTERVAL = 15000; // ms maximum between sips
+const COFFEE_SIP_DURATION = 800; // ms for sipping animation
+
+// DOM observation constants
+const DOM_OBSERVATION_DEBOUNCE = 500; // ms to debounce DOM changes
+const AUTO_BUBBLE_COOLDOWN = 10000; // ms cooldown between automatic bubbles
+
 // Sample quips for the chat bubble
 const CHAT_QUIPS = [
   'Hey there! 👋 Found any bugs today?',
@@ -38,6 +48,14 @@ const CHAT_QUIPS = [
   'Remember: readable code is maintainable code! 📖',
   'Stay hydrated while coding! 💧',
 ];
+
+// Contextual messages based on page content
+const CONTEXTUAL_MESSAGES = {
+  unhandledError: 'Oh no, this unhandled error looks serious! 😱',
+  errorResolved: 'Great job fixing that error! 🎉',
+  performance: 'Performance looks good! 📈',
+  manyErrors: 'Lots of errors to investigate! 🕵️‍♀️',
+};
 
 class SentryChanAvatar {
   private shadowRoot: ShadowRoot | null = null;
@@ -57,6 +75,10 @@ class SentryChanAvatar {
   private idleImage: HTMLImageElement | null = null;
   private grabImage: HTMLImageElement | null = null;
 
+  // Sleepy state images
+  private sleepyHoldingImage: HTMLImageElement | null = null;
+  private sleepySippingImage: HTMLImageElement | null = null;
+
   private debounceTimer: NodeJS.Timeout | null = null;
   private unsubscribe: (() => void) | null = null;
 
@@ -70,6 +92,19 @@ class SentryChanAvatar {
   private currentMessage = '';
   private currentCharIndex = 0;
   private bubbleActive = false;
+
+  // Activity detection and sleepy state
+  private lastActivityTime = Date.now();
+  private inactivityTimer: NodeJS.Timeout | null = null;
+  private coffeeSipTimer: NodeJS.Timeout | null = null;
+  private isSleepy = false;
+  private isSipping = false;
+
+  // DOM observation for automatic triggers
+  private domObserver: MutationObserver | null = null;
+  private domObservationTimer: NodeJS.Timeout | null = null;
+  private lastAutoBubbleTime = 0;
+  private lastUnhandledErrorCount = 0;
 
   constructor() {
     this.initialize();
@@ -122,6 +157,8 @@ class SentryChanAvatar {
       this.setupEventListeners();
       this.setupStorageListener();
       this.setupKeyboardShortcuts();
+      this.setupActivityDetection();
+      this.setupDOMObservation();
 
       // Update visibility based on state
       this.updateVisibility();
@@ -644,6 +681,15 @@ class SentryChanAvatar {
       const grabUrl = chrome.runtime.getURL('assets/sentry_chan_cursor_grab.png');
       this.grabImage = await this.loadImage(grabUrl);
       console.log('[Sentry-chan] Grab image preloaded');
+
+      // Preload sleepy coffee images
+      const sleepyHoldingUrl = chrome.runtime.getURL('assets/sentry_chan_sleepy_holding_coffee.png');
+      this.sleepyHoldingImage = await this.loadImage(sleepyHoldingUrl);
+      console.log('[Sentry-chan] Sleepy holding coffee image preloaded');
+
+      const sleepySippingUrl = chrome.runtime.getURL('assets/sentry_chan_sleepy_sipping_coffee.png');
+      this.sleepySippingImage = await this.loadImage(sleepySippingUrl);
+      console.log('[Sentry-chan] Sleepy sipping coffee image preloaded');
     } catch (error) {
       console.error('[Sentry-chan] Failed to preload images:', error);
       throw error;
@@ -672,6 +718,20 @@ class SentryChanAvatar {
     if (this.avatarImg && this.idleImage) {
       this.avatarImg.src = this.idleImage.src;
       console.log('[Sentry-chan] Switched to idle image');
+    }
+  }
+
+  private switchToSleepyHoldingImage(): void {
+    if (this.avatarImg && this.sleepyHoldingImage) {
+      this.avatarImg.src = this.sleepyHoldingImage.src;
+      console.log('[Sentry-chan] Switched to sleepy holding coffee image');
+    }
+  }
+
+  private switchToSleepySippingImage(): void {
+    if (this.avatarImg && this.sleepySippingImage) {
+      this.avatarImg.src = this.sleepySippingImage.src;
+      console.log('[Sentry-chan] Switched to sleepy sipping coffee image');
     }
   }
 
@@ -704,6 +764,7 @@ class SentryChanAvatar {
     // Close button click
     this.bubbleCloseButton.addEventListener('click', e => {
       e.stopPropagation();
+      this.recordActivity();
       this.dismissBubble();
     });
 
@@ -771,6 +832,9 @@ class SentryChanAvatar {
 
     console.log('[Sentry-chan] Showing chat bubble:', message);
 
+    // Record activity
+    this.recordActivity();
+
     this.bubbleActive = true;
     this.bubbleState = 'appearing';
     this.currentMessage = message;
@@ -833,6 +897,9 @@ class SentryChanAvatar {
 
     console.log('[Sentry-chan] Skipping typewriter animation');
 
+    // Record activity
+    this.recordActivity();
+
     // Clear timer and show complete text immediately
     this.clearBubbleTimers();
     this.bubbleText.textContent = this.currentMessage;
@@ -859,6 +926,9 @@ class SentryChanAvatar {
     }
 
     console.log('[Sentry-chan] Dismissing chat bubble');
+
+    // Record activity if manually dismissed
+    this.recordActivity();
 
     this.bubbleState = 'dismissing';
     this.clearBubbleTimers();
@@ -963,7 +1033,191 @@ class SentryChanAvatar {
     });
   }
 
+  private setupActivityDetection(): void {
+    // Track user activity for sleepy state
+    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+
+    const handleActivity = () => {
+      this.recordActivity();
+    };
+
+    // Add activity listeners to document
+    activityEvents.forEach(event => {
+      document.addEventListener(event, handleActivity, { passive: true });
+    });
+
+    // Add activity listeners to window for scroll events
+    window.addEventListener('scroll', handleActivity, { passive: true });
+
+    // Start inactivity monitoring
+    this.startInactivityMonitoring();
+  }
+
+  private recordActivity(): void {
+    const now = Date.now();
+    this.lastActivityTime = now;
+
+    // Wake up from sleepy state if active
+    if (this.isSleepy) {
+      this.wakeUpFromSleepy();
+    }
+
+    // Reset inactivity timer
+    this.resetInactivityTimer();
+  }
+
+  private startInactivityMonitoring(): void {
+    this.resetInactivityTimer();
+  }
+
+  private resetInactivityTimer(): void {
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+    }
+
+    this.inactivityTimer = setTimeout(() => {
+      this.enterSleepyState();
+    }, INACTIVITY_THRESHOLD);
+  }
+
+  private enterSleepyState(): void {
+    if (this.isSleepy || this.isDragging || this.bubbleActive) {
+      return; // Don't go sleepy during interactions
+    }
+
+    console.log('[Sentry-chan] Entering sleepy state - no activity detected');
+
+    this.isSleepy = true;
+    this.switchToSleepyHoldingImage();
+
+    // Start random coffee sipping cycle
+    this.scheduleCoffeeSip();
+  }
+
+  private scheduleCoffeeSip(): void {
+    if (!this.isSleepy) return;
+
+    // Random interval between 2-5 seconds
+    const randomInterval =
+      COFFEE_SIP_MIN_INTERVAL + Math.random() * (COFFEE_SIP_MAX_INTERVAL - COFFEE_SIP_MIN_INTERVAL);
+
+    this.coffeeSipTimer = setTimeout(() => {
+      if (this.isSleepy && !this.isSipping) {
+        this.startCoffeeSip();
+      }
+    }, randomInterval);
+  }
+
+  private startCoffeeSip(): void {
+    if (!this.isSleepy || this.isSipping) return;
+
+    console.log('[Sentry-chan] Taking a sip of coffee');
+
+    this.isSipping = true;
+    this.switchToSleepySippingImage();
+
+    // Return to holding after sip duration
+    setTimeout(() => {
+      if (this.isSleepy) {
+        this.isSipping = false;
+        this.switchToSleepyHoldingImage();
+
+        // Schedule next sip
+        this.scheduleCoffeeSip();
+      }
+    }, COFFEE_SIP_DURATION);
+  }
+
+  private wakeUpFromSleepy(): void {
+    if (!this.isSleepy) return;
+
+    console.log('[Sentry-chan] Waking up from sleepy state');
+
+    this.isSleepy = false;
+    this.isSipping = false;
+
+    // Clear coffee sip timer
+    if (this.coffeeSipTimer) {
+      clearTimeout(this.coffeeSipTimer);
+      this.coffeeSipTimer = null;
+    }
+
+    // Return to idle image
+    this.switchToIdleImage();
+  }
+
+  private setupDOMObservation(): void {
+    // Create observer to watch for page content changes
+    this.domObserver = new MutationObserver(() => {
+      this.debouncedPageAnalysis();
+    });
+
+    // Start observing the document body for changes
+    this.domObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-sentry-element'],
+    });
+
+    // Do initial page analysis
+    this.debouncedPageAnalysis();
+  }
+
+  private debouncedPageAnalysis(): void {
+    if (this.domObservationTimer) {
+      clearTimeout(this.domObservationTimer);
+    }
+
+    this.domObservationTimer = setTimeout(() => {
+      this.analyzePageContent();
+    }, DOM_OBSERVATION_DEBOUNCE);
+  }
+
+  private analyzePageContent(): void {
+    if (!this.currentState?.visible || this.bubbleActive) {
+      return; // Don't analyze if avatar is hidden or bubble is active
+    }
+
+    // Check cooldown for automatic bubbles
+    const now = Date.now();
+    if (now - this.lastAutoBubbleTime < AUTO_BUBBLE_COOLDOWN) {
+      return;
+    }
+
+    try {
+      // Look for unhandled error elements
+      const unhandledElements = document.querySelectorAll('[data-sentry-element="UnhandledTagWrapper"]');
+
+      const currentUnhandledCount = unhandledElements.length;
+
+      // Trigger bubble if new unhandled errors appeared
+      if (currentUnhandledCount > this.lastUnhandledErrorCount && currentUnhandledCount > 0) {
+        console.log(`[Sentry-chan] Detected ${currentUnhandledCount} unhandled errors on page`);
+        this.showAutomaticBubble(CONTEXTUAL_MESSAGES.unhandledError);
+      }
+
+      this.lastUnhandledErrorCount = currentUnhandledCount;
+    } catch (error) {
+      console.warn('[Sentry-chan] Error analyzing page content:', error);
+    }
+  }
+
+  private showAutomaticBubble(message: string): void {
+    if (this.bubbleActive) {
+      return; // Respect rate limiting
+    }
+
+    console.log('[Sentry-chan] Showing automatic bubble:', message);
+
+    this.lastAutoBubbleTime = Date.now();
+    this.showChatBubble(message);
+  }
+
   private handleAvatarClick(e: MouseEvent): void {
+    // Record activity for sleepy state
+    this.recordActivity();
+
     // Only trigger chat bubble if it wasn't a drag operation
     if (this.isDragging || Date.now() - this.dragStartTime < 200) {
       return; // Was a drag or too close to drag end
@@ -1026,6 +1280,9 @@ class SentryChanAvatar {
     if (!this.container || this.isDragging) return;
 
     console.log('[Sentry-chan] Beginning actual drag operation');
+
+    // Record activity
+    this.recordActivity();
 
     this.isDragging = true;
     this.container.classList.add('dragging');
@@ -1212,10 +1469,17 @@ class SentryChanAvatar {
   private async hideAvatar(): Promise<void> {
     if (!this.container || !this.restoreTab) return;
 
+    // Record activity
+    this.recordActivity();
+
     // Dismiss any active chat bubble
     if (this.bubbleActive) {
       this.dismissBubble();
     }
+
+    // Clear activity timers and DOM observation when hidden
+    this.clearActivityTimers();
+    this.clearDOMObservation();
 
     // Animate hide
     this.container.classList.add('hidden');
@@ -1238,6 +1502,9 @@ class SentryChanAvatar {
   private async showAvatar(): Promise<void> {
     if (!this.container || !this.restoreTab) return;
 
+    // Record activity
+    this.recordActivity();
+
     // Hide restore tab
     this.restoreTab.classList.remove('visible');
 
@@ -1247,6 +1514,10 @@ class SentryChanAvatar {
         this.container.classList.remove('hidden');
       }
     }, 100);
+
+    // Restart activity monitoring and DOM observation when shown
+    this.startInactivityMonitoring();
+    this.setupDOMObservation();
 
     await sentryChanStorage.setVisibility(true);
   }
@@ -1262,12 +1533,23 @@ class SentryChanAvatar {
     if (this.currentState.visible) {
       this.container.classList.remove('hidden');
       this.restoreTab.classList.remove('visible');
+
+      // Restart activity monitoring and DOM observation when visible
+      this.startInactivityMonitoring();
+      this.setupDOMObservation();
+
       console.log('[Sentry-chan] Avatar shown');
     } else {
       // Get position before hiding
       const rect = this.container.getBoundingClientRect();
       const restoreX = rect.left + rect.width / 2 - 16;
       const restoreY = rect.bottom - 6;
+
+      // Clear activity timers, DOM observation, and sleepy state when hidden
+      this.clearActivityTimers();
+      this.clearDOMObservation();
+      this.isSleepy = false;
+      this.isSipping = false;
 
       this.container.classList.add('hidden');
 
@@ -1355,6 +1637,12 @@ class SentryChanAvatar {
     // Clear chat bubble timers
     this.clearBubbleTimers();
 
+    // Clear activity detection timers
+    this.clearActivityTimers();
+
+    // Clear DOM observation
+    this.clearDOMObservation();
+
     if (this.unsubscribe) {
       this.unsubscribe();
     }
@@ -1362,6 +1650,30 @@ class SentryChanAvatar {
     const shadowContainer = document.getElementById(SHADOW_ROOT_ID);
     if (shadowContainer) {
       shadowContainer.remove();
+    }
+  }
+
+  private clearActivityTimers(): void {
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+    }
+
+    if (this.coffeeSipTimer) {
+      clearTimeout(this.coffeeSipTimer);
+      this.coffeeSipTimer = null;
+    }
+  }
+
+  private clearDOMObservation(): void {
+    if (this.domObserver) {
+      this.domObserver.disconnect();
+      this.domObserver = null;
+    }
+
+    if (this.domObservationTimer) {
+      clearTimeout(this.domObservationTimer);
+      this.domObservationTimer = null;
     }
   }
 }
