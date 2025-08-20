@@ -34,6 +34,8 @@ const INACTIVITY_THRESHOLD = 10000; // ms before going sleepy
 const SLEEPY_BLINK_MIN_INTERVAL = 2000; // ms minimum between blinks
 const SLEEPY_BLINK_MAX_INTERVAL = 4000; // ms maximum between blinks
 const SLEEPY_BLINK_DURATION = 300; // ms for eyes closed during blink
+const SLEEPY_MESSAGE_MIN_INTERVAL = 15000; // ms minimum between sleepy voice lines
+const SLEEPY_MESSAGE_MAX_INTERVAL = 30000; // ms maximum between sleepy voice lines
 
 // Panicked state constants
 const PANICKED_DURATION = 6000; // ms to stay in panicked state
@@ -61,6 +63,13 @@ const CHAT_QUIPS = [
   "You're doing amazing work! 🌟",
   'Remember: readable code is maintainable code! 📖',
   'Stay hydrated while coding! 💧',
+];
+
+// Sleepy state voice lines
+const SLEEPY_QUIPS = [
+  "Where is the dev, it's boring... 😴",
+  'Is anyone even working on this code? *yawn* 🥱',
+  "I guess I'll just take a little nap while waiting... 💤",
 ];
 
 // Contextual messages based on page content
@@ -134,6 +143,7 @@ class SentryChanAvatar {
   private lastActivityTime = Date.now();
   private inactivityTimer: NodeJS.Timeout | null = null;
   private sleepyBlinkTimer: NodeJS.Timeout | null = null;
+  private sleepyMessageTimer: NodeJS.Timeout | null = null;
   private isSleepy = false;
   private isSleepyEyesClosed = false;
 
@@ -1235,6 +1245,10 @@ class SentryChanAvatar {
     return CHAT_QUIPS[Math.floor(Math.random() * CHAT_QUIPS.length)];
   }
 
+  private getRandomSleepyQuip(): string {
+    return SLEEPY_QUIPS[Math.floor(Math.random() * SLEEPY_QUIPS.length)];
+  }
+
   private setupEventListeners(): void {
     if (!this.container || !this.hideButton || !this.restoreTab) return;
 
@@ -1383,6 +1397,9 @@ class SentryChanAvatar {
 
     // Start random blinking cycle
     this.scheduleSleepyBlink();
+
+    // Start random sleepy voice lines
+    this.scheduleSleepyMessage();
   }
 
   private scheduleSleepyBlink(): void {
@@ -1419,6 +1436,32 @@ class SentryChanAvatar {
     }, SLEEPY_BLINK_DURATION);
   }
 
+  private scheduleSleepyMessage(): void {
+    if (!this.isSleepy) return;
+
+    // Random interval between 15-30 seconds for sleepy voice lines
+    const randomInterval =
+      SLEEPY_MESSAGE_MIN_INTERVAL + Math.random() * (SLEEPY_MESSAGE_MAX_INTERVAL - SLEEPY_MESSAGE_MIN_INTERVAL);
+
+    this.sleepyMessageTimer = setTimeout(() => {
+      if (this.isSleepy && !this.bubbleActive) {
+        this.showSleepyMessage();
+      }
+    }, randomInterval);
+  }
+
+  private showSleepyMessage(): void {
+    if (!this.isSleepy || this.bubbleActive) return;
+
+    console.log('[Sentry-chan] Showing sleepy voice line');
+
+    const sleepyMessage = this.getRandomSleepyQuip();
+    this.showAutomaticBubble(sleepyMessage);
+
+    // Schedule next sleepy message
+    this.scheduleSleepyMessage();
+  }
+
   private wakeUpFromSleepy(): void {
     if (!this.isSleepy) return;
 
@@ -1427,10 +1470,15 @@ class SentryChanAvatar {
     this.isSleepy = false;
     this.isSleepyEyesClosed = false;
 
-    // Clear sleepy blink timer
+    // Clear sleepy timers
     if (this.sleepyBlinkTimer) {
       clearTimeout(this.sleepyBlinkTimer);
       this.sleepyBlinkTimer = null;
+    }
+
+    if (this.sleepyMessageTimer) {
+      clearTimeout(this.sleepyMessageTimer);
+      this.sleepyMessageTimer = null;
     }
 
     // Return to idle image (unless panicked, celebrating, or thinking)
@@ -2486,6 +2534,11 @@ class SentryChanAvatar {
     if (this.sleepyBlinkTimer) {
       clearTimeout(this.sleepyBlinkTimer);
       this.sleepyBlinkTimer = null;
+    }
+
+    if (this.sleepyMessageTimer) {
+      clearTimeout(this.sleepyMessageTimer);
+      this.sleepyMessageTimer = null;
     }
 
     if (this.panickedTimer) {
