@@ -45,7 +45,7 @@ const manifest = {
         '*://*.sentry.dev/*',
         '*://*.sentry.com/*'
       ],
-      js: [`content/sentryChan.iife${IS_DEV ? '_dev' : ''}.js`],
+      js: ['content/sentryChan.iife_dev.js'],
       run_at: 'document_idle',
     },
   ],

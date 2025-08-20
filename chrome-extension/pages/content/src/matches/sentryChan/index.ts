@@ -12,24 +12,64 @@ const AVATAR_CONTAINER_ID = 'sentry-chan-container';
 const SNAP_THRESHOLD = 24;
 const ANIMATION_DURATION = 200;
 const DEBOUNCE_DELAY = 150;
+const AVATAR_SCALE = 0.25; // Scale factor for the avatar (0.15 = 15% of natural size, giving ~154x230px)
 
 // Animation frame utilities
 const animationFrame: number | null = null;
 let dragAnimationFrame: number | null = null;
 
+// Chat bubble constants
+const TYPEWRITER_SPEED = 40; // ms per character
+const PUNCTUATION_PAUSE_LONG = 120; // ms for .?!
+const PUNCTUATION_PAUSE_SHORT = 60; // ms for ,;
+const BUBBLE_AUTO_DISMISS_DELAY = 3000; // ms after completion
+const BUBBLE_FADE_DURATION = 200; // ms for fade animations
+
+// Sample quips for the chat bubble
+const CHAT_QUIPS = [
+  'Hey there! 👋 Found any bugs today?',
+  'Remember to add proper error handling! 🐛',
+  'Your code looks great! Keep it up! ✨',
+  "Don't forget to test edge cases! 🧪",
+  'Time for a coffee break? ☕',
+  'Debugging is like being a detective! 🔍',
+  'Every error is a learning opportunity! 📚',
+  "You're doing amazing work! 🌟",
+  'Remember: readable code is maintainable code! 📖',
+  'Stay hydrated while coding! 💧',
+];
+
 class SentryChanAvatar {
   private shadowRoot: ShadowRoot | null = null;
   private container: HTMLElement | null = null;
   private avatar: HTMLElement | null = null;
+  private avatarImg: HTMLImageElement | null = null;
   private hideButton: HTMLElement | null = null;
   private restoreTab: HTMLElement | null = null;
 
   private isDragging = false;
   private dragOffset = { x: 0, y: 0 };
   private currentState: SentryChanStateType | null = null;
+  private dragStartTime = 0;
+  private dragStartPos = { x: 0, y: 0 };
+
+  // Image caching for drag states
+  private idleImage: HTMLImageElement | null = null;
+  private grabImage: HTMLImageElement | null = null;
 
   private debounceTimer: NodeJS.Timeout | null = null;
   private unsubscribe: (() => void) | null = null;
+
+  // Chat bubble properties
+  private chatBubble: HTMLElement | null = null;
+  private bubbleText: HTMLElement | null = null;
+  private bubbleCloseButton: HTMLElement | null = null;
+  private bubbleState: 'idle' | 'appearing' | 'typing' | 'complete' | 'dismissing' = 'idle';
+  private typewriterTimer: NodeJS.Timeout | null = null;
+  private dismissTimer: NodeJS.Timeout | null = null;
+  private currentMessage = '';
+  private currentCharIndex = 0;
+  private bubbleActive = false;
 
   constructor() {
     this.initialize();
@@ -56,21 +96,22 @@ class SentryChanAvatar {
       this.currentState = await sentryChanStorage.get();
       console.log('[Sentry-chan] Current state:', this.currentState);
 
-      // Only initialize if enabled
+      // Only initialize if enabled (temporarily bypassing for debugging)
       if (!this.currentState.enabled || !this.currentState.domainEnabled) {
         console.log(
-          '[Sentry-chan] Disabled by settings - enabled:',
+          '[Sentry-chan] WARNING: Extension disabled but forcing initialization for debugging - enabled:',
           this.currentState.enabled,
           'domainEnabled:',
           this.currentState.domainEnabled,
         );
-        return;
+        // Don't return - continue with initialization for debugging
       }
 
-      // Initialize visibility based on startVisible setting for first load
-      if (this.currentState.visible !== this.currentState.startVisible) {
-        console.log('[Sentry-chan] Setting initial visibility from startVisible:', this.currentState.startVisible);
-        await sentryChanStorage.setVisibility(this.currentState.startVisible);
+      // Force visibility for debugging
+      console.log('[Sentry-chan] Current visibility state:', this.currentState.visible);
+      if (!this.currentState.visible) {
+        console.log('[Sentry-chan] Forcing visibility to true for debugging');
+        await sentryChanStorage.setVisibility(true);
         this.currentState = await sentryChanStorage.get();
       }
 
@@ -126,8 +167,8 @@ class SentryChanAvatar {
       /* Avatar container */
       #${AVATAR_CONTAINER_ID} {
         position: absolute;
-        width: var(--avatar-size, 80px);
-        height: var(--avatar-size, 80px);
+        width: var(--avatar-width, var(--avatar-size, 80px));
+        height: var(--avatar-height, var(--avatar-size, 80px));
         pointer-events: auto;
         user-select: none;
         cursor: pointer;
@@ -150,28 +191,25 @@ class SentryChanAvatar {
       .avatar-image {
         width: 100%;
         height: 100%;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #362D59 0%, #8B5CF6 100%);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
         display: flex;
         align-items: center;
         justify-content: center;
-        overflow: hidden;
         position: relative;
+        background: transparent;
       }
       
       .avatar-image img {
         width: 100%;
         height: 100%;
-        border-radius: 50%;
-        object-fit: cover;
+        object-fit: contain;
+        object-position: center;
         display: block;
+        background: transparent;
       }
       
       .avatar-image svg {
         width: 100%;
         height: 100%;
-        border-radius: 50%;
       }
       
       /* Hover controls */
@@ -304,6 +342,170 @@ class SentryChanAvatar {
         outline: 2px solid #8B5CF6;
         outline-offset: 2px;
       }
+      
+      /* Chat bubble styles */
+      .chat-bubble {
+        position: absolute;
+        max-width: 280px;
+        min-width: 120px;
+        padding: 12px 16px;
+        background: #1f1f23;
+        border: 1px solid #362d59;
+        border-radius: 16px;
+        color: #e1e5e9;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        line-height: 1.4;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        pointer-events: auto;
+        z-index: 1002;
+        opacity: 0;
+        transform: scale(0.8) translateY(10px);
+        transition: all ${BUBBLE_FADE_DURATION}ms ease-out;
+        word-wrap: break-word;
+        hyphens: auto;
+      }
+      
+      .chat-bubble.visible {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+      
+      .chat-bubble.dismissing {
+        opacity: 0;
+        transform: scale(0.8) translateY(-10px);
+        transition: all ${BUBBLE_FADE_DURATION}ms ease-in;
+      }
+      
+      /* Bubble arrow */
+      .chat-bubble::before {
+        content: '';
+        position: absolute;
+        width: 0;
+        height: 0;
+        border: 8px solid transparent;
+      }
+      
+      /* Arrow positions */
+      .chat-bubble.arrow-bottom::before {
+        bottom: -16px;
+        left: 20px;
+        border-top-color: #1f1f23;
+      }
+      
+      .chat-bubble.arrow-top::before {
+        top: -16px;
+        left: 20px;
+        border-bottom-color: #1f1f23;
+      }
+      
+      .chat-bubble.arrow-left::before {
+        left: -16px;
+        top: 20px;
+        border-right-color: #1f1f23;
+      }
+      
+      .chat-bubble.arrow-right::before {
+        right: -16px;
+        top: 20px;
+        border-left-color: #1f1f23;
+      }
+      
+      /* Bubble text */
+      .bubble-text {
+        margin: 0;
+        position: relative;
+      }
+      
+      /* Typewriter cursor */
+      .bubble-text.typing::after {
+        content: '|';
+        animation: blink-cursor 1s infinite;
+        margin-left: 1px;
+      }
+      
+      @keyframes blink-cursor {
+        0%, 50% { opacity: 1; }
+        51%, 100% { opacity: 0; }
+      }
+      
+      /* Close button */
+      .bubble-close {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #ef4444;
+        border: 1px solid #1f1f23;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transform: scale(0.8);
+        transition: all 0.2s ease;
+      }
+      
+      .chat-bubble:hover .bubble-close {
+        opacity: 1;
+        transform: scale(1);
+      }
+      
+      .bubble-close:hover {
+        background: #dc2626;
+        transform: scale(1.1);
+      }
+      
+      .bubble-close::before {
+        content: '×';
+        line-height: 1;
+      }
+      
+      /* Bubble positioning classes */
+      .bubble-position-top-left {
+        bottom: calc(100% + 16px);
+        left: 0;
+      }
+      
+      .bubble-position-top-right {
+        bottom: calc(100% + 16px);
+        right: 0;
+      }
+      
+      .bubble-position-bottom-left {
+        top: calc(100% + 16px);
+        left: 0;
+      }
+      
+      .bubble-position-bottom-right {
+        top: calc(100% + 16px);
+        right: 0;
+      }
+      
+      .bubble-position-left {
+        right: calc(100% + 16px);
+        top: 50%;
+        transform: translateY(-50%);
+      }
+      
+      .bubble-position-left.visible {
+        transform: translateY(-50%) scale(1);
+      }
+      
+      .bubble-position-right {
+        left: calc(100% + 16px);
+        top: 50%;
+        transform: translateY(-50%);
+      }
+      
+      .bubble-position-right.visible {
+        transform: translateY(-50%) scale(1);
+      }
     `;
 
     this.shadowRoot.appendChild(styles);
@@ -325,41 +527,73 @@ class SentryChanAvatar {
     const avatarImage = document.createElement('div');
     avatarImage.className = 'avatar-image';
 
+    // Preload both avatar images
+    await this.preloadAvatarImages();
+
     // Load PNG avatar
     try {
-      const imageUrl = chrome.runtime.getURL('assets/sentry_chan_idle.png');
-      console.log('[Sentry-chan] Loading PNG avatar from:', imageUrl);
-      
-      // Create img element for PNG
-      const img = document.createElement('img');
-      img.src = imageUrl;
-      img.alt = 'Sentry-chan Avatar';
-      img.style.cssText = `
-        width: 100%;
-        height: 100%;
-      `;
-      
-      // Wait for image to load
-      await new Promise((resolve, reject) => {
-        img.onload = () => {
-          console.log('[Sentry-chan] PNG avatar loaded successfully');
-          resolve(img);
-        };
-        img.onerror = () => {
-          reject(new Error('Failed to load PNG image'));
-        };
-        // Set a timeout in case the image never loads
-        setTimeout(() => reject(new Error('Image load timeout')), 5000);
-      });
-      
-      avatarImage.appendChild(img);
+      console.log('[Sentry-chan] Setting up avatar with idle image');
+
+      // Create img element for PNG using preloaded image
+      if (this.idleImage) {
+        this.avatarImg = this.idleImage.cloneNode() as HTMLImageElement;
+        this.avatarImg.alt = 'Sentry-chan Avatar';
+        this.avatarImg.style.cssText = `
+          width: 100%;
+          height: 100%;
+        `;
+
+        // Update container to match image's natural dimensions
+        if (this.container && this.currentState) {
+          const scale = AVATAR_SCALE;
+          const containerWidth = this.idleImage.naturalWidth * scale;
+          const containerHeight = this.idleImage.naturalHeight * scale;
+
+          this.container.style.width = `${containerWidth}px`;
+          this.container.style.height = `${containerHeight}px`;
+
+          // Update the CSS variable for consistency
+          this.container.style.setProperty('--avatar-size', `${containerWidth}px`);
+
+          // Ensure avatar is positioned within viewport bounds
+          const windowWidth = window.innerWidth;
+          const windowHeight = window.innerHeight;
+
+          let newX = this.currentState.position.x;
+          let newY = this.currentState.position.y;
+
+          // Adjust position if avatar would be off-screen
+          if (newX + containerWidth > windowWidth) {
+            newX = Math.max(0, windowWidth - containerWidth - 20); // 20px padding
+          }
+          if (newY + containerHeight > windowHeight) {
+            newY = Math.max(0, windowHeight - containerHeight - 20); // 20px padding
+          }
+
+          // Update position if needed
+          if (newX !== this.currentState.position.x || newY !== this.currentState.position.y) {
+            this.container.style.left = `${newX}px`;
+            this.container.style.top = `${newY}px`;
+            // Update storage with corrected position
+            sentryChanStorage.updatePosition(newX, newY);
+            console.log(`[Sentry-chan] Position adjusted to fit larger avatar: ${newX}, ${newY}`);
+          }
+
+          console.log(`[Sentry-chan] Container resized to natural proportions: ${containerWidth}x${containerHeight}px`);
+        }
+
+        avatarImage.appendChild(this.avatarImg);
+        console.log('[Sentry-chan] Avatar setup complete');
+      } else {
+        throw new Error('Failed to preload idle image');
+      }
     } catch (error) {
       console.warn('[Sentry-chan] Failed to load avatar PNG, using fallback:', error);
       avatarImage.innerHTML = `
-        <div style="width: 100%; height: 100%; background: linear-gradient(135deg, #362D59 0%, #8B5CF6 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px;">
-          🎭
-        </div>
-      `;
+          <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #8B5CF6; font-size: 24px;">
+            🎭
+          </div>
+        `;
     }
 
     // Hover controls
@@ -379,9 +613,15 @@ class SentryChanAvatar {
     this.restoreTab.setAttribute('aria-label', 'Show Sentry-chan avatar');
     this.restoreTab.setAttribute('title', 'Show avatar (Ctrl+Shift+.)');
 
+    // Create chat bubble
+    this.createChatBubble();
+
     // Assemble UI
     this.container.appendChild(avatarImage);
     this.container.appendChild(hoverControls);
+    if (this.chatBubble) {
+      this.container.appendChild(this.chatBubble);
+    }
     this.shadowRoot.appendChild(this.container);
     this.shadowRoot.appendChild(this.restoreTab);
 
@@ -389,6 +629,271 @@ class SentryChanAvatar {
 
     // Start idle animations if enabled
     this.updateAnimations();
+  }
+
+  private async preloadAvatarImages(): Promise<void> {
+    console.log('[Sentry-chan] Preloading avatar images...');
+
+    try {
+      // Preload idle image
+      const idleUrl = chrome.runtime.getURL('assets/sentry_chan_idle.png');
+      this.idleImage = await this.loadImage(idleUrl);
+      console.log('[Sentry-chan] Idle image preloaded');
+
+      // Preload grab image
+      const grabUrl = chrome.runtime.getURL('assets/sentry_chan_cursor_grab.png');
+      this.grabImage = await this.loadImage(grabUrl);
+      console.log('[Sentry-chan] Grab image preloaded');
+    } catch (error) {
+      console.error('[Sentry-chan] Failed to preload images:', error);
+      throw error;
+    }
+  }
+
+  private loadImage(url: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+      img.src = url;
+      // Set timeout for loading
+      setTimeout(() => reject(new Error(`Image load timeout: ${url}`)), 5000);
+    });
+  }
+
+  private switchToGrabImage(): void {
+    if (this.avatarImg && this.grabImage) {
+      this.avatarImg.src = this.grabImage.src;
+      console.log('[Sentry-chan] Switched to grab image');
+    }
+  }
+
+  private switchToIdleImage(): void {
+    if (this.avatarImg && this.idleImage) {
+      this.avatarImg.src = this.idleImage.src;
+      console.log('[Sentry-chan] Switched to idle image');
+    }
+  }
+
+  private createChatBubble(): void {
+    // Create bubble container
+    this.chatBubble = document.createElement('div');
+    this.chatBubble.className = 'chat-bubble';
+
+    // Create text element
+    this.bubbleText = document.createElement('p');
+    this.bubbleText.className = 'bubble-text';
+
+    // Create close button
+    this.bubbleCloseButton = document.createElement('button');
+    this.bubbleCloseButton.className = 'bubble-close';
+    this.bubbleCloseButton.setAttribute('aria-label', 'Close chat bubble');
+    this.bubbleCloseButton.setAttribute('title', 'Close');
+
+    // Assemble bubble
+    this.chatBubble.appendChild(this.bubbleText);
+    this.chatBubble.appendChild(this.bubbleCloseButton);
+
+    // Setup bubble event listeners
+    this.setupBubbleEventListeners();
+  }
+
+  private setupBubbleEventListeners(): void {
+    if (!this.chatBubble || !this.bubbleCloseButton) return;
+
+    // Close button click
+    this.bubbleCloseButton.addEventListener('click', e => {
+      e.stopPropagation();
+      this.dismissBubble();
+    });
+
+    // Bubble click during typing - skip to complete
+    this.chatBubble.addEventListener('click', e => {
+      if (this.bubbleState === 'typing') {
+        e.stopPropagation();
+        this.skipTypewriter();
+      }
+    });
+  }
+
+  private getBubblePosition(): { position: string; arrow: string } {
+    if (!this.container) {
+      return { position: 'bubble-position-top-left', arrow: 'arrow-bottom' };
+    }
+
+    const avatarRect = this.container.getBoundingClientRect();
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    const bubbleWidth = 280; // max-width
+    const bubbleHeight = 80; // estimated height
+    const margin = 16;
+
+    // Check available space in each direction
+    const spaceTop = avatarRect.top;
+    const spaceBottom = windowHeight - avatarRect.bottom;
+    const spaceLeft = avatarRect.left;
+    const spaceRight = windowWidth - avatarRect.right;
+
+    // Prefer bottom-right, then try other positions
+    if (spaceBottom >= bubbleHeight + margin && spaceRight >= bubbleWidth + margin) {
+      return { position: 'bubble-position-bottom-right', arrow: 'arrow-top' };
+    }
+
+    if (spaceBottom >= bubbleHeight + margin && spaceLeft >= bubbleWidth + margin) {
+      return { position: 'bubble-position-bottom-left', arrow: 'arrow-top' };
+    }
+
+    if (spaceTop >= bubbleHeight + margin && spaceRight >= bubbleWidth + margin) {
+      return { position: 'bubble-position-top-right', arrow: 'arrow-bottom' };
+    }
+
+    if (spaceTop >= bubbleHeight + margin && spaceLeft >= bubbleWidth + margin) {
+      return { position: 'bubble-position-top-left', arrow: 'arrow-bottom' };
+    }
+
+    if (spaceRight >= bubbleWidth + margin) {
+      return { position: 'bubble-position-right', arrow: 'arrow-left' };
+    }
+
+    if (spaceLeft >= bubbleWidth + margin) {
+      return { position: 'bubble-position-left', arrow: 'arrow-right' };
+    }
+
+    // Fallback to top-left if no good position found
+    return { position: 'bubble-position-top-left', arrow: 'arrow-bottom' };
+  }
+
+  private showChatBubble(message: string): void {
+    if (!this.chatBubble || !this.bubbleText || this.bubbleActive) {
+      return; // Rate limiting - only one bubble at a time
+    }
+
+    console.log('[Sentry-chan] Showing chat bubble:', message);
+
+    this.bubbleActive = true;
+    this.bubbleState = 'appearing';
+    this.currentMessage = message;
+    this.currentCharIndex = 0;
+
+    // Clear any existing timers
+    this.clearBubbleTimers();
+
+    // Position the bubble
+    const { position, arrow } = this.getBubblePosition();
+
+    // Reset classes
+    this.chatBubble.className = `chat-bubble ${position} ${arrow}`;
+    this.bubbleText.className = 'bubble-text';
+    this.bubbleText.textContent = '';
+
+    // Show bubble with fade-in
+    requestAnimationFrame(() => {
+      if (this.chatBubble) {
+        this.chatBubble.classList.add('visible');
+        this.bubbleState = 'typing';
+        this.bubbleText?.classList.add('typing');
+        this.startTypewriter();
+      }
+    });
+  }
+
+  private startTypewriter(): void {
+    if (!this.bubbleText || this.bubbleState !== 'typing') return;
+
+    const char = this.currentMessage[this.currentCharIndex];
+    if (!char) {
+      // Typing complete
+      this.completeTypewriter();
+      return;
+    }
+
+    // Add character to display
+    this.bubbleText.textContent = this.currentMessage.substring(0, this.currentCharIndex + 1);
+    this.currentCharIndex++;
+
+    // Calculate delay for next character
+    let delay = TYPEWRITER_SPEED;
+
+    // Add pause for punctuation
+    if (/[.?!]/.test(char)) {
+      delay += PUNCTUATION_PAUSE_LONG;
+    } else if (/[,;]/.test(char)) {
+      delay += PUNCTUATION_PAUSE_SHORT;
+    }
+
+    // Schedule next character
+    this.typewriterTimer = setTimeout(() => {
+      this.startTypewriter();
+    }, delay);
+  }
+
+  private skipTypewriter(): void {
+    if (this.bubbleState !== 'typing' || !this.bubbleText) return;
+
+    console.log('[Sentry-chan] Skipping typewriter animation');
+
+    // Clear timer and show complete text immediately
+    this.clearBubbleTimers();
+    this.bubbleText.textContent = this.currentMessage;
+    this.completeTypewriter();
+  }
+
+  private completeTypewriter(): void {
+    if (!this.bubbleText) return;
+
+    console.log('[Sentry-chan] Typewriter animation complete');
+
+    this.bubbleState = 'complete';
+    this.bubbleText.classList.remove('typing');
+
+    // Start auto-dismiss timer
+    this.dismissTimer = setTimeout(() => {
+      this.dismissBubble();
+    }, BUBBLE_AUTO_DISMISS_DELAY);
+  }
+
+  private dismissBubble(): void {
+    if (!this.chatBubble || this.bubbleState === 'dismissing' || this.bubbleState === 'idle') {
+      return;
+    }
+
+    console.log('[Sentry-chan] Dismissing chat bubble');
+
+    this.bubbleState = 'dismissing';
+    this.clearBubbleTimers();
+
+    // Fade out
+    this.chatBubble.classList.remove('visible');
+    this.chatBubble.classList.add('dismissing');
+
+    // Reset state after animation
+    setTimeout(() => {
+      this.bubbleState = 'idle';
+      this.bubbleActive = false;
+      this.currentMessage = '';
+      this.currentCharIndex = 0;
+
+      if (this.chatBubble) {
+        this.chatBubble.classList.remove('dismissing');
+      }
+    }, BUBBLE_FADE_DURATION);
+  }
+
+  private clearBubbleTimers(): void {
+    if (this.typewriterTimer) {
+      clearTimeout(this.typewriterTimer);
+      this.typewriterTimer = null;
+    }
+
+    if (this.dismissTimer) {
+      clearTimeout(this.dismissTimer);
+      this.dismissTimer = null;
+    }
+  }
+
+  private getRandomQuip(): string {
+    return CHAT_QUIPS[Math.floor(Math.random() * CHAT_QUIPS.length)];
   }
 
   private setupEventListeners(): void {
@@ -405,6 +910,9 @@ class SentryChanAvatar {
       e.stopPropagation();
       this.showAvatar();
     });
+
+    // Avatar click for chat bubble (before drag events)
+    this.container.addEventListener('click', this.handleAvatarClick.bind(this));
 
     // Drag and drop
     this.container.addEventListener('mousedown', this.handleMouseDown.bind(this));
@@ -455,11 +963,33 @@ class SentryChanAvatar {
     });
   }
 
+  private handleAvatarClick(e: MouseEvent): void {
+    // Only trigger chat bubble if it wasn't a drag operation
+    if (this.isDragging || Date.now() - this.dragStartTime < 200) {
+      return; // Was a drag or too close to drag end
+    }
+
+    e.stopPropagation();
+
+    // Don't show bubble if clicking on hide button or during bubble interaction
+    if (e.target === this.hideButton || this.bubbleActive) {
+      return;
+    }
+
+    // Show random quip
+    const message = this.getRandomQuip();
+    this.showChatBubble(message);
+  }
+
   private handleMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return; // Only left mouse button
 
     e.preventDefault();
     e.stopPropagation();
+
+    // Record drag start info for click detection
+    this.dragStartTime = Date.now();
+    this.dragStartPos = { x: e.clientX, y: e.clientY };
 
     this.startDrag(e.clientX, e.clientY);
   }
@@ -471,21 +1001,37 @@ class SentryChanAvatar {
     e.stopPropagation();
 
     const touch = e.touches[0];
+
+    // Record drag start info for click detection
+    this.dragStartTime = Date.now();
+    this.dragStartPos = { x: touch.clientX, y: touch.clientY };
+
     this.startDrag(touch.clientX, touch.clientY);
   }
 
   private startDrag(clientX: number, clientY: number): void {
     if (!this.container || !this.currentState) return;
 
-    this.isDragging = true;
-    this.container.classList.add('dragging');
-
-    // Calculate drag offset
+    // Calculate drag offset but don't mark as dragging yet
     const rect = this.container.getBoundingClientRect();
     this.dragOffset = {
       x: clientX - rect.left,
       y: clientY - rect.top,
     };
+
+    // We'll mark as dragging in updateDragPosition if movement exceeds threshold
+  }
+
+  private beginActualDrag(): void {
+    if (!this.container || this.isDragging) return;
+
+    console.log('[Sentry-chan] Beginning actual drag operation');
+
+    this.isDragging = true;
+    this.container.classList.add('dragging');
+
+    // Switch to grab image
+    this.switchToGrabImage();
 
     // Update storage state
     sentryChanStorage.setDragging(true);
@@ -495,6 +1041,18 @@ class SentryChanAvatar {
   }
 
   private handleMouseMove(e: MouseEvent): void {
+    // Check if we should start dragging based on movement threshold
+    if (!this.isDragging && this.dragStartTime > 0) {
+      const distance = Math.sqrt(
+        Math.pow(e.clientX - this.dragStartPos.x, 2) + Math.pow(e.clientY - this.dragStartPos.y, 2),
+      );
+
+      if (distance > 5) {
+        // 5px threshold to distinguish click from drag
+        this.beginActualDrag();
+      }
+    }
+
     if (!this.isDragging) return;
 
     e.preventDefault();
@@ -502,10 +1060,25 @@ class SentryChanAvatar {
   }
 
   private handleTouchMove(e: TouchEvent): void {
-    if (!this.isDragging || e.touches.length !== 1) return;
+    if (e.touches.length !== 1) return;
+
+    const touch = e.touches[0];
+
+    // Check if we should start dragging based on movement threshold
+    if (!this.isDragging && this.dragStartTime > 0) {
+      const distance = Math.sqrt(
+        Math.pow(touch.clientX - this.dragStartPos.x, 2) + Math.pow(touch.clientY - this.dragStartPos.y, 2),
+      );
+
+      if (distance > 5) {
+        // 5px threshold to distinguish tap from drag
+        this.beginActualDrag();
+      }
+    }
+
+    if (!this.isDragging) return;
 
     e.preventDefault();
-    const touch = e.touches[0];
     this.updateDragPosition(touch.clientX, touch.clientY);
   }
 
@@ -536,14 +1109,30 @@ class SentryChanAvatar {
     });
   }
 
-  private handleMouseUp(e: MouseEvent): void {
-    if (!this.isDragging) return;
-    this.endDrag();
+  private handleMouseUp(): void {
+    // Reset drag detection even if not actively dragging
+    const wasDragging = this.isDragging;
+
+    if (wasDragging) {
+      this.endDrag();
+    }
+
+    // Reset drag detection state
+    this.dragStartTime = 0;
+    this.dragStartPos = { x: 0, y: 0 };
   }
 
-  private handleTouchEnd(e: TouchEvent): void {
-    if (!this.isDragging) return;
-    this.endDrag();
+  private handleTouchEnd(): void {
+    // Reset drag detection even if not actively dragging
+    const wasDragging = this.isDragging;
+
+    if (wasDragging) {
+      this.endDrag();
+    }
+
+    // Reset drag detection state
+    this.dragStartTime = 0;
+    this.dragStartPos = { x: 0, y: 0 };
   }
 
   private async endDrag(): Promise<void> {
@@ -551,6 +1140,9 @@ class SentryChanAvatar {
 
     this.isDragging = false;
     this.container.classList.remove('dragging');
+
+    // Switch back to idle image
+    this.switchToIdleImage();
 
     // Re-enable text selection
     document.body.style.userSelect = '';
@@ -619,6 +1211,11 @@ class SentryChanAvatar {
 
   private async hideAvatar(): Promise<void> {
     if (!this.container || !this.restoreTab) return;
+
+    // Dismiss any active chat bubble
+    if (this.bubbleActive) {
+      this.dismissBubble();
+    }
 
     // Animate hide
     this.container.classList.add('hidden');
@@ -755,6 +1352,9 @@ class SentryChanAvatar {
       cancelAnimationFrame(dragAnimationFrame);
     }
 
+    // Clear chat bubble timers
+    this.clearBubbleTimers();
+
     if (this.unsubscribe) {
       this.unsubscribe();
     }
@@ -769,18 +1369,22 @@ class SentryChanAvatar {
 // Initialize Sentry-chan when content script loads
 let sentryChanInstance: SentryChanAvatar | null = null;
 
-function initializeSentryChan() {
+const initializeSentryChan = () => {
+  console.log('[Sentry-chan] initializeSentryChan called');
   if (!sentryChanInstance) {
+    console.log('[Sentry-chan] Creating new avatar instance');
     sentryChanInstance = new SentryChanAvatar();
+  } else {
+    console.log('[Sentry-chan] Avatar instance already exists');
   }
-}
+};
 
-function destroySentryChan() {
+const destroySentryChan = () => {
   if (sentryChanInstance) {
     sentryChanInstance.destroy();
     sentryChanInstance = null;
   }
-}
+};
 
 // Initialize when document is ready
 if (document.readyState === 'loading') {
@@ -806,3 +1410,5 @@ observer.observe(document, { subtree: true, childList: true });
 window.addEventListener('beforeunload', destroySentryChan);
 
 console.log('[Sentry-chan] Content script loaded and ready!');
+console.log('[Sentry-chan] Current URL:', window.location.href);
+console.log('[Sentry-chan] Document ready state:', document.readyState);
