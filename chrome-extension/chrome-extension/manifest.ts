@@ -5,9 +5,8 @@ import type { ManifestType } from '@extension/shared';
 const packageJson = JSON.parse(readFileSync('./package.json', 'utf8'));
 
 /**
- * Sentry-chan: Floating Mascot Chrome Extension
- * A lightweight floating avatar for Sentry pages with drag-and-drop,
- * hide/show functionality, and persistent state management.
+ * Sentry-chan: Debugging Companion Chrome Extension
+ * A lightweight floating avatar for Sentry pages.
  */
 const manifest = {
   manifest_version: 3,

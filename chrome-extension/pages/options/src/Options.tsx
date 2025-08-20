@@ -55,7 +55,7 @@ const Options = () => {
             <img src={chrome.runtime.getURL('icon-128.png')} alt="Sentry-chan" className="options-logo" />
             <div>
               <h1>Sentry-chan Options</h1>
-              <p className="subtitle">Configure your floating mascot</p>
+              <p className="subtitle">Configure your debugging companion</p>
             </div>
           </div>
         </div>
@@ -193,7 +193,7 @@ const Options = () => {
 
             <div className="about-content">
               <p>
-                <strong>Sentry-chan</strong> is a lightweight floating mascot that appears on Sentry pages.
+                <strong>Sentry-chan</strong> is a debugging companion that appears on Sentry pages.
               </p>
               <ul>
                 <li>🎭 Non-intrusive design with shadow DOM isolation</li>

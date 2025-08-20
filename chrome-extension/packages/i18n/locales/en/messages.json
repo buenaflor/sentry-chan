@@ -1,11 +1,11 @@
 {
   "extensionDescription": {
     "description": "Extension description",
-    "message": "A lightweight floating mascot avatar for Sentry pages"
+    "message": "A debugging companion avatar for Sentry pages"
   },
   "extensionName": {
     "description": "Extension name",
-    "message": "Sentry-chan: Floating Mascot"
+    "message": "Sentry-chan: Debugging Companion"
   },
   "toggleAvatar": {
     "message": "Toggle Avatar"

@@ -32,7 +32,7 @@ const Popup = () => {
         </div>
         <div className="title-container">
           <h1>Sentry-chan</h1>
-          <p className="subtitle">Floating Mascot</p>
+          <p className="subtitle">Debugging Companion</p>
         </div>
       </div>
 

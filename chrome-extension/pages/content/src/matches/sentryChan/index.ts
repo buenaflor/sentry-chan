@@ -80,6 +80,7 @@ class SentryChanAvatar {
   private avatarImg: HTMLImageElement | null = null;
   private hideButton: HTMLElement | null = null;
   private restoreTab: HTMLElement | null = null;
+  private leaningContainer: HTMLElement | null = null;
 
   private isDragging = false;
   private dragOffset = { x: 0, y: 0 };
@@ -100,6 +101,9 @@ class SentryChanAvatar {
 
   // Celebrating state image
   private celebratingImage: HTMLImageElement | null = null;
+
+  // Leaning over state image
+  private leaningOverImage: HTMLImageElement | null = null;
 
   private debounceTimer: NodeJS.Timeout | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -147,7 +151,7 @@ class SentryChanAvatar {
   }
 
   private async initialize(): Promise<void> {
-    console.log('[Sentry-chan] Initializing floating mascot...');
+    console.log('[Sentry-chan] Initializing debugging companion...');
 
     // Wait for DOM to be ready
     if (document.readyState === 'loading') {
@@ -422,6 +426,26 @@ class SentryChanAvatar {
         outline: 2px solid #8B5CF6;
         outline-offset: 2px;
       }
+
+      /* Leaning container styles */
+      .leaning-container {
+        position: fixed;
+        z-index: 2147483647;
+        opacity: 0;
+        transform: translateY(20px);
+        transition: all 0.3s ease;
+        pointer-events: none;
+      }
+
+      .leaning-container.visible {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+
+      .leaning-container:hover {
+        transform: translateY(-5px);
+      }
       
       /* Chat bubble styles */
       .chat-bubble {
@@ -610,6 +634,9 @@ class SentryChanAvatar {
     // Preload both avatar images
     await this.preloadAvatarImages();
 
+    // Create leaning container now that images are loaded
+    this.createLeaningContainer();
+
     // Load PNG avatar
     try {
       console.log('[Sentry-chan] Setting up avatar with idle image');
@@ -704,6 +731,9 @@ class SentryChanAvatar {
     }
     this.shadowRoot.appendChild(this.container);
     this.shadowRoot.appendChild(this.restoreTab);
+    if (this.leaningContainer) {
+      document.body.appendChild(this.leaningContainer);
+    }
 
     this.avatar = avatarImage;
 
@@ -743,6 +773,11 @@ class SentryChanAvatar {
       const celebratingUrl = chrome.runtime.getURL('assets/sentry_chan_celebrating.png');
       this.celebratingImage = await this.loadImage(celebratingUrl);
       console.log('[Sentry-chan] Celebrating image preloaded');
+
+      // Preload leaning over image
+      const leaningOverUrl = chrome.runtime.getURL('assets/sentry_chan_leaning_over.png');
+      this.leaningOverImage = await this.loadImage(leaningOverUrl);
+      console.log('[Sentry-chan] Leaning over image preloaded');
     } catch (error) {
       console.error('[Sentry-chan] Failed to preload images:', error);
       throw error;
@@ -842,6 +877,62 @@ class SentryChanAvatar {
         this.skipTypewriter();
       }
     });
+  }
+
+  private createLeaningContainer(): void {
+    if (!this.leaningOverImage) {
+      return;
+    }
+
+    // Create leaning container
+    this.leaningContainer = document.createElement('div');
+    this.leaningContainer.className = 'leaning-container';
+
+    // Create leaning image
+    const leaningImg = this.leaningOverImage.cloneNode() as HTMLImageElement;
+    leaningImg.alt = 'Sentry-chan leaning over';
+    leaningImg.style.cssText = `
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    `;
+
+    this.leaningContainer.appendChild(leaningImg);
+
+    // Position at bottom center
+    this.positionLeaningContainer();
+
+    // Add click handler to restore visibility
+    this.leaningContainer.addEventListener('click', () => {
+      this.showAvatar();
+    });
+  }
+
+  private positionLeaningContainer(): void {
+    if (!this.leaningContainer || !this.leaningOverImage) return;
+
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    const scale = 0.105; // Scale factor for the leaning image
+    const imageWidth = this.leaningOverImage.naturalWidth * scale;
+    const imageHeight = this.leaningOverImage.naturalHeight * scale;
+
+    // Position at bottom center
+    const centerX = (windowWidth - imageWidth) / 2;
+    const bottomY = windowHeight - imageHeight;
+
+    this.leaningContainer.style.cssText = `
+      position: fixed !important;
+      left: ${centerX}px !important;
+      top: ${bottomY}px !important;
+      width: ${imageWidth}px !important;
+      height: ${imageHeight}px !important;
+      z-index: 2147483647 !important;
+      opacity: 0 !important;
+      transform: translateY(20px) !important;
+      transition: all 0.3s ease !important;
+      pointer-events: none !important;
+    `;
   }
 
   private getBubblePosition(): { position: string; arrow: string } {
@@ -1064,6 +1155,13 @@ class SentryChanAvatar {
     // Prevent context menu on avatar
     this.container.addEventListener('contextmenu', e => {
       e.preventDefault();
+    });
+
+    // Handle window resize to reposition leaning container
+    window.addEventListener('resize', () => {
+      if (this.leaningContainer && !this.currentState?.visible) {
+        this.positionLeaningContainer();
+      }
     });
   }
 
@@ -2015,17 +2113,20 @@ class SentryChanAvatar {
       this.container.classList.remove('hidden');
       this.restoreTab.classList.remove('visible');
 
+      // Hide leaning container
+      if (this.leaningContainer) {
+        this.leaningContainer.classList.remove('visible');
+        this.leaningContainer.style.opacity = '0';
+        this.leaningContainer.style.transform = 'translateY(20px)';
+        this.leaningContainer.style.pointerEvents = 'none';
+      }
+
       // Restart activity monitoring and DOM observation when visible
       this.startInactivityMonitoring();
       this.setupDOMObservation();
 
       console.log('[Sentry-chan] Avatar shown');
     } else {
-      // Get position before hiding
-      const rect = this.container.getBoundingClientRect();
-      const restoreX = rect.left + rect.width / 2 - 16;
-      const restoreY = rect.bottom - 6;
-
       // Clear activity timers, DOM observation, and all states when hidden
       this.clearActivityTimers();
       this.clearDOMObservation();
@@ -2035,16 +2136,27 @@ class SentryChanAvatar {
       this.isCelebrating = false;
 
       this.container.classList.add('hidden');
+      this.restoreTab.classList.remove('visible');
 
-      // Position and show restore tab
-      setTimeout(() => {
-        if (this.restoreTab) {
-          this.restoreTab.style.left = `${restoreX}px`;
-          this.restoreTab.style.top = `${restoreY}px`;
-          this.restoreTab.classList.add('visible');
-          console.log('[Sentry-chan] Avatar hidden, restore tab shown');
+      // Show leaning container at bottom center
+      if (this.leaningContainer) {
+        // Always re-append the leaning container to ensure it's in the DOM
+        if (!this.leaningContainer.parentElement) {
+          document.body.appendChild(this.leaningContainer);
         }
-      }, ANIMATION_DURATION);
+        
+        this.positionLeaningContainer();
+        
+        setTimeout(() => {
+          if (this.leaningContainer) {
+            this.leaningContainer.classList.add('visible');
+            // Override the opacity and transform to make it visible
+            this.leaningContainer.style.opacity = '1';
+            this.leaningContainer.style.transform = 'translateY(0)';
+            this.leaningContainer.style.pointerEvents = 'auto';
+          }
+        }, ANIMATION_DURATION);
+      }
     }
   }
 
@@ -2128,6 +2240,11 @@ class SentryChanAvatar {
 
     if (this.unsubscribe) {
       this.unsubscribe();
+    }
+
+    // Remove leaning container from document body if it exists
+    if (this.leaningContainer && this.leaningContainer.parentElement) {
+      this.leaningContainer.remove();
     }
 
     const shadowContainer = document.getElementById(SHADOW_ROOT_ID);
