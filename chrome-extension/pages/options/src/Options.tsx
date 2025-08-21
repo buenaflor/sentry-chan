@@ -98,13 +98,13 @@ const Options = () => {
             <div className="setting-item">
               <div className="setting-info">
                 <label className="setting-label">{t('avatarSize')}</label>
-                <p className="setting-description">Adjust the size of the avatar (64-128px)</p>
+                <p className="setting-description">Adjust the size of the avatar (64-512px)</p>
               </div>
               <div className="size-control">
                 <input
                   type="range"
                   min="64"
-                  max="128"
+                  max="512"
                   step="4"
                   value={state.size}
                   onChange={handleSizeChange}

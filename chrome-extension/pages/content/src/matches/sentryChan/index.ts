@@ -13,14 +13,14 @@ const SNAP_THRESHOLD = 24;
 const EDGE_SNAP_THRESHOLD = 50; // Distance from edge to trigger edge snapping
 const ANIMATION_DURATION = 200;
 const DEBOUNCE_DELAY = 150;
-const AVATAR_SCALE = 0.25; // Scale factor for the avatar (0.15 = 15% of natural size, giving ~154x230px)
+// Avatar size is now dynamically controlled via storage settings
 
 // Animation frame utilities
 const animationFrame: number | null = null;
 let dragAnimationFrame: number | null = null;
 
 // Chat bubble constants
-const TYPEWRITER_SPEED = 80; // ms per character
+const TYPEWRITER_SPEED = 40; // ms per character
 const PUNCTUATION_PAUSE_LONG = 120; // ms for .?!
 const PUNCTUATION_PAUSE_SHORT = 60; // ms for ,;
 const BUBBLE_AUTO_DISMISS_DELAY = 3000; // ms after completion
@@ -71,6 +71,14 @@ const SLEEPY_QUIPS = [
   'Is anyone even working on this code? *yawn* 🥱',
   "I guess I'll just take a little nap while waiting... 💤",
 ];
+
+// Introduction messages for keyboard shortcuts
+const INTRO_MESSAGES = {
+  introduction:
+    "I'm Sentry-chan, your new debugging companion. I'll be here with you while you explore Sentry and track down errors and bugs.",
+  role: 'My main role is to guide you and help ease the stress of solving bugs—so you can stay focused and motivated.',
+  encouragement: "Come on—let's take a look inside Sentry, and see how we can make debugging more enjoyable!",
+};
 
 // Contextual messages based on page content
 const CONTEXTUAL_MESSAGES = {
@@ -678,9 +686,11 @@ class SentryChanAvatar {
 
         // Update container to match image's natural dimensions
         if (this.container && this.currentState) {
-          const scale = AVATAR_SCALE;
-          const containerWidth = this.idleMouthClosedImage.naturalWidth * scale;
-          const containerHeight = this.idleMouthClosedImage.naturalHeight * scale;
+          // Use the actual size from storage instead of hardcoded scale
+          const desiredSize = this.currentState.size;
+          const aspectRatio = this.idleMouthClosedImage.naturalHeight / this.idleMouthClosedImage.naturalWidth;
+          const containerWidth = desiredSize;
+          const containerHeight = desiredSize * aspectRatio;
 
           this.container.style.width = `${containerWidth}px`;
           this.container.style.height = `${containerHeight}px`;
@@ -893,8 +903,8 @@ class SentryChanAvatar {
       return; // Already running
     }
 
-    // Only animate if in idle state (not sleepy, panicked, celebrating, or thinking)
-    if (this.isSleepy || this.isPanicked || this.isCelebrating || this.isThinking) {
+    // Don't animate if panicked, celebrating, or thinking (but allow sleepy speech)
+    if (this.isPanicked || this.isCelebrating || this.isThinking) {
       return;
     }
 
@@ -905,9 +915,13 @@ class SentryChanAvatar {
       this.avatar.classList.remove('animate-blink', 'animate-bounce', 'animate-sip');
     }
 
-    // Start with mouth closed (default idle state)
+    // Start with appropriate closed state based on current state
     this.isSpeechMouthOpen = false;
-    this.switchToIdleImage(); // This is mouth closed by default
+    if (this.isSleepy) {
+      this.switchToSleepyEyesOpenImage(); // Use sleepy eyes open as default for sleepy speech
+    } else {
+      this.switchToIdleImage(); // Use idle mouth closed for normal speech
+    }
 
     this.speechAnimationTimer = setInterval(() => {
       if (this.bubbleState !== 'typing') {
@@ -916,17 +930,27 @@ class SentryChanAvatar {
         return;
       }
 
-      // Stop animation if state changed to sleepy, panicked, celebrating, or thinking
-      if (this.isSleepy || this.isPanicked || this.isCelebrating || this.isThinking) {
+      // Stop animation if state changed to panicked, celebrating, or thinking
+      if (this.isPanicked || this.isCelebrating || this.isThinking) {
         this.stopSpeechAnimation();
         return;
       }
 
-      // Alternate between mouth closed (default) and mouth open (talking)
-      if (this.isSpeechMouthOpen) {
-        this.switchToIdleImage(); // mouth closed
+      // Alternate based on current state
+      if (this.isSleepy) {
+        // For sleepy state: alternate between eyes open and eyes closed
+        if (this.isSpeechMouthOpen) {
+          this.switchToSleepyEyesOpenImage(); // eyes open
+        } else {
+          this.switchToSleepyEyesClosedImage(); // eyes closed (like blinking while talking)
+        }
       } else {
-        this.switchToIdleMouthOpenImage(); // mouth open
+        // For idle state: alternate between mouth closed and mouth open
+        if (this.isSpeechMouthOpen) {
+          this.switchToIdleImage(); // mouth closed
+        } else {
+          this.switchToIdleMouthOpenImage(); // mouth open
+        }
       }
       this.isSpeechMouthOpen = !this.isSpeechMouthOpen;
     }, SPEECH_ANIMATION_INTERVAL);
@@ -938,9 +962,11 @@ class SentryChanAvatar {
       this.speechAnimationTimer = null;
       console.log('[Sentry-chan] Stopped speech animation');
 
-      // Return to idle image when done talking
-      if (!this.isSleepy && !this.isPanicked && !this.isCelebrating && !this.isThinking) {
-        this.switchToIdleImage();
+      // Return to appropriate state when done talking
+      if (this.isSleepy) {
+        this.switchToSleepyEyesOpenImage(); // Return to sleepy eyes open
+      } else if (!this.isPanicked && !this.isCelebrating && !this.isThinking) {
+        this.switchToIdleImage(); // Return to idle mouth closed
       }
 
       // Re-enable idle animations after a short delay to avoid conflicts
@@ -1069,21 +1095,21 @@ class SentryChanAvatar {
     const spaceLeft = avatarRect.left;
     const spaceRight = windowWidth - avatarRect.right;
 
-    // Prefer bottom-right, then try other positions
-    if (spaceBottom >= bubbleHeight + margin && spaceRight >= bubbleWidth + margin) {
-      return { position: 'bubble-position-bottom-right', arrow: 'arrow-top' };
-    }
-
-    if (spaceBottom >= bubbleHeight + margin && spaceLeft >= bubbleWidth + margin) {
-      return { position: 'bubble-position-bottom-left', arrow: 'arrow-top' };
-    }
-
+    // Prefer top positions first when space is available, then fall back to bottom
     if (spaceTop >= bubbleHeight + margin && spaceRight >= bubbleWidth + margin) {
       return { position: 'bubble-position-top-right', arrow: 'arrow-bottom' };
     }
 
     if (spaceTop >= bubbleHeight + margin && spaceLeft >= bubbleWidth + margin) {
       return { position: 'bubble-position-top-left', arrow: 'arrow-bottom' };
+    }
+
+    if (spaceBottom >= bubbleHeight + margin && spaceRight >= bubbleWidth + margin) {
+      return { position: 'bubble-position-bottom-right', arrow: 'arrow-top' };
+    }
+
+    if (spaceBottom >= bubbleHeight + margin && spaceLeft >= bubbleWidth + margin) {
+      return { position: 'bubble-position-bottom-left', arrow: 'arrow-top' };
     }
 
     if (spaceRight >= bubbleWidth + margin) {
@@ -1311,21 +1337,43 @@ class SentryChanAvatar {
   private setupKeyboardShortcuts(): void {
     // Listen for keyboard shortcuts
     document.addEventListener('keydown', e => {
-      // Check for Ctrl+Shift+. (period)
-      if (e.ctrlKey && e.shiftKey && e.code === 'Period') {
-        // Don't trigger if user is typing in an input field
-        const activeElement = document.activeElement;
-        if (
-          activeElement &&
-          (activeElement.tagName === 'INPUT' ||
-            activeElement.tagName === 'TEXTAREA' ||
-            activeElement.hasAttribute('contenteditable'))
-        ) {
-          return;
-        }
+      // Don't trigger if user is typing in an input field
+      const activeElement = document.activeElement;
+      if (
+        activeElement &&
+        (activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          activeElement.hasAttribute('contenteditable'))
+      ) {
+        return;
+      }
 
-        e.preventDefault();
-        this.toggleVisibility();
+      // Check for Ctrl+Shift combinations
+      if (e.ctrlKey && e.shiftKey) {
+        switch (e.code) {
+          case 'Period': // Ctrl+Shift+. (period) - toggle visibility
+            e.preventDefault();
+            this.toggleVisibility();
+            break;
+
+          case 'KeyA': // Ctrl+Shift+A - introduction message
+            e.preventDefault();
+            this.recordActivity();
+            this.showChatBubble(INTRO_MESSAGES.introduction);
+            break;
+
+          case 'KeyB': // Ctrl+Shift+B - role message
+            e.preventDefault();
+            this.recordActivity();
+            this.showChatBubble(INTRO_MESSAGES.role);
+            break;
+
+          case 'KeyC': // Ctrl+Shift+C - encouragement message
+            e.preventDefault();
+            this.recordActivity();
+            this.showChatBubble(INTRO_MESSAGES.encouragement);
+            break;
+        }
       }
     });
   }
@@ -2477,6 +2525,40 @@ class SentryChanAvatar {
 
     // Update size
     this.container.style.setProperty('--avatar-size', `${this.currentState.size}px`);
+
+    // Update container dimensions based on the new size
+    if (this.idleMouthClosedImage) {
+      const desiredSize = this.currentState.size;
+      const aspectRatio = this.idleMouthClosedImage.naturalHeight / this.idleMouthClosedImage.naturalWidth;
+      const containerWidth = desiredSize;
+      const containerHeight = desiredSize * aspectRatio;
+
+      this.container.style.width = `${containerWidth}px`;
+      this.container.style.height = `${containerHeight}px`;
+
+      // Ensure avatar stays within viewport bounds after resize
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+
+      let newX = this.currentState.position.x;
+      let newY = this.currentState.position.y;
+
+      // Adjust position if avatar would be off-screen
+      if (newX + containerWidth > windowWidth) {
+        newX = Math.max(0, windowWidth - containerWidth - 20);
+      }
+      if (newY + containerHeight > windowHeight) {
+        newY = Math.max(0, windowHeight - containerHeight - 20);
+      }
+
+      // Update position if needed
+      if (newX !== this.currentState.position.x || newY !== this.currentState.position.y) {
+        this.container.style.left = `${newX}px`;
+        this.container.style.top = `${newY}px`;
+        // Update storage with corrected position
+        sentryChanStorage.updatePosition(newX, newY);
+      }
+    }
 
     // Update visibility
     this.updateVisibility();

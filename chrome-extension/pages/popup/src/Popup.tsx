@@ -19,6 +19,11 @@ const Popup = () => {
     await sentryChanStorage.resetPosition();
   };
 
+  const handleSizeChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newSize = parseInt(event.target.value, 10);
+    await sentryChanStorage.updateSize(newSize);
+  };
+
   const openOptions = () => {
     chrome.runtime.openOptionsPage();
   };
@@ -51,6 +56,28 @@ const Popup = () => {
               <span className="checkmark"></span>
               Snap to edge
             </label>
+          </div>
+        </div>
+
+        {/* Avatar Size Slider */}
+        <div className="control-group">
+          <div className="control-item">
+            <div className="setting-info">
+              <label className="setting-label">{t('avatarSize')}</label>
+              <p className="setting-description">Adjust the size of the avatar</p>
+            </div>
+            <div className="size-control">
+              <input
+                type="range"
+                min="64"
+                max="512"
+                step="4"
+                value={state.size}
+                onChange={handleSizeChange}
+                className="size-slider"
+              />
+              <span className="size-value">{state.size}px</span>
+            </div>
           </div>
         </div>
 

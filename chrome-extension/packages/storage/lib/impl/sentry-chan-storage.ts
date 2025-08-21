@@ -91,7 +91,7 @@ export const sentryChanStorage: SentryChanStorageType = {
   updateSize: async (size: number) => {
     await storage.set(state => ({
       ...state,
-      size: Math.max(64, Math.min(128, size)), // Clamp between 64-128px
+      size: Math.max(64, Math.min(512, size)), // Clamp between 64-512px
       lastInteraction: Date.now(),
     }));
   },
