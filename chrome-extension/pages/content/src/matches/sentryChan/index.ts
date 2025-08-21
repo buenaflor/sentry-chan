@@ -1007,8 +1007,7 @@ class SentryChanAvatar {
     // Close button click
     this.bubbleCloseButton.addEventListener('click', e => {
       e.stopPropagation();
-      this.recordActivity();
-      this.dismissBubble();
+      this.dismissBubble(true); // Manual dismissal
     });
 
     // Bubble click during typing - skip to complete
@@ -1124,15 +1123,17 @@ class SentryChanAvatar {
     return { position: 'bubble-position-top-left', arrow: 'arrow-bottom' };
   }
 
-  private showChatBubble(message: string): void {
+  private showChatBubble(message: string, recordActivity: boolean = true): void {
     if (!this.chatBubble || !this.bubbleText || this.bubbleActive) {
       return; // Rate limiting - only one bubble at a time
     }
 
     console.log('[Sentry-chan] Showing chat bubble:', message);
 
-    // Record activity
-    this.recordActivity();
+    // Record activity only if requested (don't wake up from automatic sleepy messages)
+    if (recordActivity) {
+      this.recordActivity();
+    }
 
     this.bubbleActive = true;
     this.bubbleState = 'appearing';
@@ -1222,15 +1223,17 @@ class SentryChanAvatar {
     }, BUBBLE_AUTO_DISMISS_DELAY);
   }
 
-  private dismissBubble(): void {
+  private dismissBubble(isManualDismissal: boolean = false): void {
     if (!this.chatBubble || this.bubbleState === 'dismissing' || this.bubbleState === 'idle') {
       return;
     }
 
     console.log('[Sentry-chan] Dismissing chat bubble');
 
-    // Record activity if manually dismissed
-    this.recordActivity();
+    // Record activity only if manually dismissed (don't wake up from automatic sleepy bubble dismissals)
+    if (isManualDismissal) {
+      this.recordActivity();
+    }
 
     this.bubbleState = 'dismissing';
     this.clearBubbleTimers();
@@ -1504,7 +1507,7 @@ class SentryChanAvatar {
     console.log('[Sentry-chan] Showing sleepy voice line');
 
     const sleepyMessage = this.getRandomSleepyQuip();
-    this.showAutomaticBubble(sleepyMessage);
+    this.showAutomaticBubble(sleepyMessage, false); // Don't wake up from sleepy messages
 
     // Schedule next sleepy message
     this.scheduleSleepyMessage();
@@ -1949,7 +1952,7 @@ class SentryChanAvatar {
     }
   }
 
-  private showAutomaticBubble(message: string): void {
+  private showAutomaticBubble(message: string, recordActivity: boolean = true): void {
     if (this.bubbleActive) {
       return; // Respect rate limiting
     }
@@ -1957,7 +1960,7 @@ class SentryChanAvatar {
     console.log('[Sentry-chan] Showing automatic bubble:', message);
 
     this.lastAutoBubbleTime = Date.now();
-    this.showChatBubble(message);
+    this.showChatBubble(message, recordActivity);
   }
 
   private handleAvatarClick(e: MouseEvent): void {
