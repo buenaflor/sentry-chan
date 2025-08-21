@@ -18,9 +18,7 @@ const manifest = {
   // Minimal permissions for security and privacy
   permissions: ['storage', 'activeTab'],
   host_permissions: [
-    '*://*.sentry.io/*',
-    '*://*.sentry.dev/*',
-    '*://*.sentry.com/*'
+    '*://*.sentry.io/*'
   ],
 
   // Extension UI
@@ -40,9 +38,7 @@ const manifest = {
   content_scripts: [
     {
       matches: [
-        '*://*.sentry.io/*',
-        '*://*.sentry.dev/*',
-        '*://*.sentry.com/*'
+        '*://*.sentry.io/*'
       ],
       js: [IS_DEV ? 'content/sentryChan.iife_dev.js' : 'content/sentryChan.iife.js'],
       run_at: 'document_idle',
@@ -54,9 +50,7 @@ const manifest = {
     {
       resources: ['assets/*', 'icon-128.png', 'icon-34.png'],
       matches: [
-        '*://*.sentry.io/*',
-        '*://*.sentry.dev/*',
-        '*://*.sentry.com/*'
+        '*://*.sentry.io/*'
       ],
     },
   ],
