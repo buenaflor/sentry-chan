@@ -3,9 +3,17 @@ import { t } from '@extension/i18n';
 import { useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
 import { sentryChanStorage } from '@extension/storage';
 import { ErrorDisplay, LoadingSpinner } from '@extension/ui';
+import { useCallback, useState, useEffect, useRef } from 'react';
 
 const Popup = () => {
   const state = useStorage(sentryChanStorage);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentSize, setCurrentSize] = useState(state.size);
+
+  // Update local size state when storage changes
+  useEffect(() => {
+    setCurrentSize(state.size);
+  }, [state.size]);
 
   const handleToggleVisibility = async () => {
     await sentryChanStorage.toggleVisibility();
@@ -19,10 +27,46 @@ const Popup = () => {
     await sentryChanStorage.resetPosition();
   };
 
-  const handleSizeChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSizeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = parseInt(event.target.value, 10);
-    await sentryChanStorage.updateSize(newSize);
-  };
+
+    // Update local state immediately for responsive UI
+    setCurrentSize(newSize);
+
+    // Send direct message to content script for immediate avatar update
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+      if (tabs[0]?.id) {
+        chrome.tabs
+          .sendMessage(tabs[0].id, {
+            type: 'PREVIEW_AVATAR_SIZE',
+            size: newSize,
+          })
+          .catch(() => {
+            // Ignore errors if content script isn't available
+          });
+      }
+    });
+
+    // Clear existing timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    // Debounce storage updates - only save after user stops dragging
+    debounceTimeoutRef.current = setTimeout(() => {
+      sentryChanStorage.updateSize(newSize).catch(console.error);
+    }, 300);
+  }, []);
+
+  const handleSizeCommit = useCallback(
+    (event: React.MouseEvent<HTMLInputElement> | React.TouchEvent<HTMLInputElement>) => {
+      const target = event.target as HTMLInputElement;
+      const newSize = parseInt(target.value, 10);
+      // Ensure final value is saved when user finishes dragging
+      sentryChanStorage.updateSize(newSize).catch(console.error);
+    },
+    [],
+  );
 
   const openOptions = () => {
     chrome.runtime.openOptionsPage();
@@ -72,11 +116,13 @@ const Popup = () => {
                 min="64"
                 max="512"
                 step="4"
-                value={state.size}
+                value={currentSize}
                 onChange={handleSizeChange}
+                onMouseUp={handleSizeCommit}
+                onTouchEnd={handleSizeCommit}
                 className="size-slider"
               />
-              <span className="size-value">{state.size}px</span>
+              <span className="size-value">{currentSize}px</span>
             </div>
           </div>
         </div>

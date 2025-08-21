@@ -2508,6 +2508,43 @@ class SentryChanAvatar {
     }
   }
 
+  public previewSize(size: number): void {
+    if (!this.container || !this.currentState || !this.idleMouthClosedImage) {
+      return;
+    }
+
+    // Update container dimensions for preview (without saving to storage)
+    const desiredSize = size;
+    const aspectRatio = this.idleMouthClosedImage.naturalHeight / this.idleMouthClosedImage.naturalWidth;
+    const containerWidth = desiredSize;
+    const containerHeight = desiredSize * aspectRatio;
+
+    this.container.style.width = `${containerWidth}px`;
+    this.container.style.height = `${containerHeight}px`;
+    this.container.style.setProperty('--avatar-size', `${size}px`);
+
+    // Ensure avatar stays within viewport bounds
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    let newX = this.currentState.position.x;
+    let newY = this.currentState.position.y;
+
+    // Adjust position if avatar would be off-screen
+    if (newX + containerWidth > windowWidth) {
+      newX = Math.max(0, windowWidth - containerWidth - 20);
+    }
+    if (newY + containerHeight > windowHeight) {
+      newY = Math.max(0, windowHeight - containerHeight - 20);
+    }
+
+    // Update position if needed (visual only, don't save to storage)
+    if (newX !== this.currentState.position.x || newY !== this.currentState.position.y) {
+      this.container.style.left = `${newX}px`;
+      this.container.style.top = `${newY}px`;
+    }
+  }
+
   private updateUI(): void {
     if (!this.container || !this.currentState) {
       console.log('[Sentry-chan] updateUI: Missing container or state');
@@ -2708,6 +2745,15 @@ const observer = new MutationObserver(() => {
 });
 
 observer.observe(document, { subtree: true, childList: true });
+
+// Listen for messages from popup/options for real-time avatar size preview
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'PREVIEW_AVATAR_SIZE' && sentryChanInstance) {
+    // Temporarily update avatar size for preview without saving to storage
+    sentryChanInstance.previewSize(message.size);
+    sendResponse({ success: true });
+  }
+});
 
 // Clean up on page unload
 window.addEventListener('beforeunload', destroySentryChan);

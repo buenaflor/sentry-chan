@@ -3,18 +3,35 @@ import { t } from '@extension/i18n';
 import { useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
 import { sentryChanStorage } from '@extension/storage';
 import { cn, ErrorDisplay, LoadingSpinner } from '@extension/ui';
-import { useState } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { SentryChanStateType } from '@extension/storage';
 import type React from 'react';
 
 const Options = () => {
   const state = useStorage(sentryChanStorage);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const lastUpdateRef = useRef<number>(0);
+  const [currentSize, setCurrentSize] = useState(state.size);
 
-  const handleSizeChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Update local size state when storage changes
+  useEffect(() => {
+    setCurrentSize(state.size);
+  }, [state.size]);
+
+  const handleSizeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const size = parseInt(event.target.value);
-    await sentryChanStorage.updateSize(size);
-  };
+
+    // Update local state immediately for responsive UI
+    setCurrentSize(size);
+
+    // Throttle storage updates to ~60fps for smooth avatar updates without overwhelming storage
+    const now = Date.now();
+    if (now - lastUpdateRef.current >= 16) {
+      // ~60fps
+      lastUpdateRef.current = now;
+      sentryChanStorage.updateSize(size).catch(console.error);
+    }
+  }, []);
 
   const handleCornerChange = async (corner: SentryChanStateType['corner']) => {
     await sentryChanStorage.updateCorner(corner);
@@ -73,22 +90,18 @@ const Options = () => {
                 <label className="setting-label">{t('startVisible')}</label>
                 <p className="setting-description">Show the avatar when loading Sentry pages</p>
               </div>
-              <label className="toggle-switch">
-                <input type="checkbox" checked={state.startVisible} onChange={handleToggleStartVisible} />
+              <label className="toggle-switch" htmlFor="start-visible-toggle" aria-label="Toggle start visible setting">
+                <input
+                  id="start-visible-toggle"
+                  type="checkbox"
+                  checked={state.startVisible}
+                  onChange={handleToggleStartVisible}
+                />
                 <span className="toggle-slider"></span>
               </label>
             </div>
 
-            <div className="setting-item">
-              <div className="setting-info">
-                <label className="setting-label">{t('enableAnimations')}</label>
-                <p className="setting-description">Enable idle animations (blinking, bouncing)</p>
-              </div>
-              <label className="toggle-switch">
-                <input type="checkbox" checked={state.enableAnimations} onChange={handleToggleAnimations} />
-                <span className="toggle-slider"></span>
-              </label>
-            </div>
+
           </div>
 
           {/* Appearance Settings */}
@@ -106,39 +119,15 @@ const Options = () => {
                   min="64"
                   max="512"
                   step="4"
-                  value={state.size}
+                  value={currentSize}
                   onChange={handleSizeChange}
                   className="size-slider"
                 />
-                <span className="size-value">{state.size}px</span>
+                <span className="size-value">{currentSize}px</span>
               </div>
             </div>
 
-            <div className="setting-item">
-              <div className="setting-info">
-                <label className="setting-label">{t('defaultCorner')}</label>
-                <p className="setting-description">Preferred corner when avatar snaps to edge</p>
-              </div>
-              <div className="corner-grid">
-                {[
-                  { value: 'top-left', label: 'Top Left' },
-                  { value: 'top-right', label: 'Top Right' },
-                  { value: 'bottom-left', label: 'Bottom Left' },
-                  { value: 'bottom-right', label: 'Bottom Right' },
-                ].map(corner => (
-                  <label key={corner.value} className="corner-option">
-                    <input
-                      type="radio"
-                      name="corner"
-                      value={corner.value}
-                      checked={state.corner === corner.value}
-                      onChange={() => handleCornerChange(corner.value as SentryChanStateType['corner'])}
-                    />
-                    <span className="corner-label">{corner.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+
           </div>
 
           {/* Keyboard Shortcuts */}
@@ -147,7 +136,7 @@ const Options = () => {
 
             <div className="setting-item">
               <div className="setting-info">
-                <label className="setting-label">Toggle Avatar Visibility</label>
+                <span className="setting-label">Toggle Avatar Visibility</span>
                 <p className="setting-description">
                   Current shortcut: <code>Ctrl+Shift+Period</code>
                 </p>
@@ -164,7 +153,7 @@ const Options = () => {
 
             <div className="setting-item">
               <div className="setting-info">
-                <label className="setting-label">Current Position</label>
+                <span className="setting-label">Current Position</span>
                 <p className="setting-description">
                   X: {Math.round(state.position.x)}px, Y: {Math.round(state.position.y)}px
                 </p>
@@ -196,11 +185,10 @@ const Options = () => {
                 <strong>Sentry-chan</strong> is a debugging companion that appears on Sentry pages.
               </p>
               <ul>
-                <li>🎭 Non-intrusive design with shadow DOM isolation</li>
-                <li>🎨 Smooth animations and drag-and-drop</li>
-                <li>💾 Cross-device settings sync</li>
+                <li>🎨 Drag-and-drop</li>
                 <li>⌨️ Keyboard shortcuts support</li>
-                <li>🔒 Privacy-focused with no telemetry</li>
+                <li>💬 Motivational messages</li>
+                <li>💪 Helps you fight the battle against bugs</li>
               </ul>
 
               <div className="version-info">
